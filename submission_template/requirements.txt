@@ -8,3 +8,8 @@ numpy>=1.19
 # 例:
 # torch>=2.0
 # transformers>=4.30
+
+# SmolVLA (examples/smolvla_libero_spatial_lora.ipynb と同じ v0.6.0 系列)
+torch>=2.7
+lerobot[smolvla]==0.6.0
+huggingface_hub>=0.25

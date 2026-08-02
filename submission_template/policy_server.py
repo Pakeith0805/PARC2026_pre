@@ -13,6 +13,8 @@
 """
 
 import argparse
+import os
+import pathlib
 from abc import ABC, abstractmethod
 
 import msgpack
@@ -63,33 +65,132 @@ class BasePolicy(ABC):
 # ============================================================
 
 
-class MyPolicy(BasePolicy):
-    """自分のポリシーをここに実装する。
+class MyPolicy(BasePolicy): # BasePolicyを継承
+    """SmolVLA（lerobot/smolvla_libero_plus）をベースにした推論実装。
 
-    例: チェックポイントをロードして推論する場合
-        def __init__(self):
-            self.model = torch.load("model_weights/checkpoint.pth")
-            self.model.eval()
-
-        def get_action(self, obs):
-            image = obs["agentview_image"]
-            # ... 前処理・推論 ...
-            return action
+    まずは追加学習なしのベース重みで動作確認する。examples/ の LoRA 学習
+    ノートブックで自分の重みを学習したら、SMOLVLA_MODEL_PATH を merge 済み
+    モデルのローカルディレクトリに向ければ差し替えられる。
     """
 
+    # 環境変数 SMOLVLA_MODEL_PATH が未設定ならベース重み（HF Hub）を使う。
+    # LoRA を学習・マージした後は、そのディレクトリのパスを設定する。
+    MODEL_PATH = os.environ.get("SMOLVLA_MODEL_PATH", "lerobot/smolvla_libero_plus")
+    MODEL_REVISION = os.environ.get(
+        "SMOLVLA_MODEL_REVISION", "7bb70aa5bc92b82c9239142775d3a173103567ff"
+    )
+    # 採点環境は外部通信を遮断する（README.md参照）。model_weights/hf_cache に
+    # 事前ダウンロード済みのHFキャッシュを同梱しておけば、そこから完全オフラインで
+    # 読み込む（src/download_model_weights.py で作成する）。同梱がなければ従来通り
+    # オンラインで取得する（ローカル開発時の後方互換）。
+    HF_CACHE_DIR = pathlib.Path(__file__).resolve().parent / "model_weights" / "hf_cache"
+
     def __init__(self):
-        # TODO: モデルのロード
-        pass
+        if self.HF_CACHE_DIR.is_dir():
+            os.environ.setdefault("HF_HOME", str(self.HF_CACHE_DIR))
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+        import torch
+        from huggingface_hub import snapshot_download
+        from lerobot.configs import PreTrainedConfig
+        from lerobot.policies.factory import make_pre_post_processors
+        from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+
+        # もしMODEL_PATHがローカルディレクトリならそのまま使う
+        # そうでなければダウンロードしてくる。
+        if os.path.isdir(self.MODEL_PATH):
+            model_dir = self.MODEL_PATH
+        else:
+            model_dir = snapshot_download(
+                repo_id=self.MODEL_PATH,
+                revision=self.MODEL_REVISION,
+                token=False,
+                allow_patterns=[
+                    "config.json",
+                    "model.safetensors",
+                    "train_config.json",
+                    "policy_preprocessor.json",
+                    "policy_preprocessor*.safetensors",
+                    "policy_postprocessor.json",
+                    "policy_postprocessor*.safetensors",
+                ],
+            )
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # configを読み込み
+        config = PreTrainedConfig.from_pretrained(model_dir)
+        config.device = str(self.device)
+        # VLM の初期重みを別途HFから読み直させない（すぐ後で checkpoint 全体の
+        # state_dict をロードするので二度手間になり、起動タイムアウト(120秒)を
+        # 圧迫する。examples/ のノートブックも merge 後の推論ではこれを false にしている）。
+        config.load_vlm_weights = False
+
+        # ロード・デバイスへの転送・推論モードに
+        self.policy = SmolVLAPolicy.from_pretrained(model_dir, config=config, strict=False)
+        self.policy.to(self.device)
+        self.policy.eval()
+
+        # 観測データをモデル入力形式に、出力をactionに変換。前処理はデバイスに、後処理はCPUに固定。こうすることで、オーバーヘッドが減るらしい。
+        self.preprocessor, self.postprocessor = make_pre_post_processors(
+            policy_cfg=config,
+            pretrained_path=model_dir,
+            preprocessor_overrides={"device_processor": {"device": str(self.device)}},
+            postprocessor_overrides={"device_processor": {"device": "cpu"}},
+        )
+
+        # 現在のタスク言語指示を処理するインスタンス変数を初期化(reset()で更新)
+        self.instruction = ""
 
     def get_action(self, obs: dict[str, np.ndarray]) -> np.ndarray:
-        # TODO: 推論処理を実装
-        # 以下はランダムポリシー（動作確認用）
-        return np.random.uniform(-1, 1, size=7).astype(np.float32)
+        import torch
+        from lerobot.policies.utils import prepare_observation_for_inference
+
+        # 環境から渡されたカメラ映像を学習データの向きに合わせる
+        raw_obs = {
+            # 学習データ（HuggingFaceVLA/libero 由来）と向きを揃えるため180度回転させる。
+            "observation.images.front": np.ascontiguousarray(obs["agentview_image"][::-1, ::-1, :]),
+            "observation.images.wrist": np.ascontiguousarray(
+                obs["robot0_eye_in_hand_image"][::-1, ::-1, :]
+            ),
+            "observation.state": np.concatenate(
+                [
+                    obs["robot0_eef_pos"].astype(np.float32),
+                    _quat_to_axis_angle(obs["robot0_eef_quat"]),
+                    obs["robot0_gripper_qpos"].astype(np.float32),
+                ]
+            ).astype(np.float32),
+        }
+
+        # 推論モードにして、バッチ化→前処理→アクション選択→後処理
+        with torch.inference_mode():
+            batch = prepare_observation_for_inference(raw_obs, self.device, task=self.instruction)
+            batch = self.preprocessor(batch)
+            action = self.policy.select_action(batch)
+            action = self.postprocessor(action)
+
+        # 7次元actionベクトルを返す
+        return action[0].detach().cpu().numpy().astype(np.float32)
 
     def reset(self, instruction: str = "") -> None:
-        # TODO: 内部状態のリセット（action chunking のキャッシュ等）
         # instruction にはタスクの言語指示が渡される
         self.instruction = instruction
+        # action chunking 用の内部キューをクリアする
+        self.policy.reset()
+
+
+def _quat_to_axis_angle(quat: np.ndarray) -> np.ndarray:
+    """xyzw 順の quaternion を axis-angle (3,) に変換する。
+
+    LeRobot の LiberoProcessorStep._quat2axisangle と同じ変換を numpy で再現。
+    """
+    x, y, z, w = (float(v) for v in quat)
+    w = max(-1.0, min(1.0, w))
+    den = (1.0 - w * w) ** 0.5
+    if den < 1e-10:
+        return np.zeros(3, dtype=np.float32)
+    angle = 2.0 * np.arccos(w)
+    axis = np.array([x, y, z], dtype=np.float64) / den
+    return (axis * angle).astype(np.float32)
 
 
 # ============================================================

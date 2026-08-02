@@ -3,4 +3,8 @@ __pycache__/
 results/
 venv/
 LIBERO-plus/
+LIBERO/
 assets.zip
+env.sh
+.local_libs/
+submission_template/model_weights/
