@@ -22,28 +22,87 @@ Track1〜3ごとにモデルを訓練し直すのは手間が大きいため、�
   安全性）で汎化せず落ちるリスクがある。予選対応で終わらせず、instructionの
   多様性やタスク構成の広さを意識したデータ設計を早めに意識しておく。
 
-## 方針2: タスク2をholdoutし、汎化性能の検証専用に使う（2026-08-02決定）
+## 方針2: 3スイート（spatial/object/goal）それぞれで基本タスクを1つholdoutし、
+汎化性能の検証専用に使う（2026-08-02決定、同日中に対象タスクを再検討）
 
-Track1 exampleの4タスクのうち、`pick_up_the_tomato_sauce_and_place_it_in_the_
-basket_table_27`（`libero_object`、難易度L5）を学習データから除外し、学習後の
-汎化性能を確認するための検証専用タスクとして使う。
+`libero_spatial`・`libero_object`・`libero_goal`それぞれで、元の10基本タスクの
+うち9つを学習に使い、残り1つを丸ごと学習データから除外して、学習後の汎化性能を
+確認するための検証専用タスクとして使う。
 
-- **なぜこのタスクか**: 4タスクは`libero_spatial`×1、`libero_object`×2、
-  `libero_goal`×1という構成（[competition_analysis.md](competition_analysis.md)
-  の「Track1 exampleタスク4種、全件の内容」参照）。spatial/goalの唯一の
-  タスクを除外すると、そのsuiteをまるごと学習データから消してしまい、
-  「汎化に失敗した」のか「そもそもその種類の課題を一度も見ていない」のか
-  区別がつかなくなる。`libero_object`だけ2つあるので、片方（タスク2）を
-  保留すれば「同じタスク構造は学習済みだが、対象物体・難易度・摂動条件は
-  未見」という狙い通りの汎化テストになる。
-- **なぜタスク2（L5、難）でありタスク3（L2、易）でないか**: 易しい方
-  （タスク3、milk）を学習に残して基本構造を学ばせ、より厳しい摂動・未見物体を
-  持つタスク2（tomato sauce）で「どれだけ厳しい条件まで汎化できるか」を測る方が
-  情報量が多い。
-- **留保**: 4タスクしかないため、3タスクで訓練するとそもそも学習データ量が
-  少なすぎる可能性がある。この保留アプローチは「動くかどうかの検証」には
-  有効だが、本番の学習データ設計（もっと広いデータが必要になるはず）とは
-  切り離して考える。
+- **なぜ基本タスク単位でholdoutするか**: `task_classification.json`
+  （LIBERO-plusのベンチマーク定義）を調べたところ、難易度（L1〜L5）は基本タスク
+  ではなく個々の摂動バリアントに紐づく属性で、どの基本タスクを選んでも
+  L1〜L5がまんべんなく存在することを確認した。よって「どの基本タスクを
+  holdoutするか」と「その中でどの難易度をテストケースにするか」は独立に決め
+  られる。基本タスクごとholdoutすることで、「同じタスク構造は学習済みだが
+  当該タスクの摂動条件は未見」という狙い通りの汎化テストになる。
+- **holdoutする基本タスク（各suiteから1つ、計3つ）**:
+  - `libero_spatial`: `pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_
+    cabinet_and_place_it_on_the_plate`
+  - `libero_object`: `pick_up_the_bbq_sauce_and_place_it_in_the_basket`
+    （**2026-08-02当日中に`tomato_sauce`から変更**。理由は下記）
+  - `libero_goal`: `put_the_bowl_on_the_stove`
+  - spatial・goalの2つは`compe/t1/T1_TASKS.csv`のTrack1 example（4タスク）に
+    含まれる基本タスクと同じものを選んだ。既にL3/L4の代表バリアントの情報が
+    手元にあり、他の資料との対応が付けやすいため。
+- **なぜ`libero_object`だけ`tomato_sauce`ではなく`bbq_sauce`にしたか**: 当初は
+  Track1 exampleに出てくる`tomato_sauce`（L5）をholdout候補にしていたが、
+  `task_classification.json`のBackground Textures/Light Conditionsカテゴリの
+  バリアントを検証したところ、`tomato_sauce`はL1に相当する変体（`_tb_6`という
+  命名）に対応する`.pruned_init`ファイルがローカルに存在せず、Light Conditions
+  側もL1〜L3自体が存在しないため、L1〜L5を揃えられないことが判明した。
+  `libero_object`の残り8基本タスクのうち7つ（`bbq_sauce`含む）はL1〜L5すべてで
+  実ファイルが確認できたため、`tomato_sauce`から`bbq_sauce`に変更した。
+  （`milk`はTrack1 exampleのタスク3として引き続き学習データに残す方針は変更なし。
+  易しいタスクで基本構造を学ばせる狙いのため。）
+- **具体的なテストケース（15件、L1〜L5×3suite）**: 摂動カテゴリは
+  Background TexturesとLight Conditionsのみを使用（後述の方針2-1参照）。
+  一覧は`compe/t1/holdout_test_tasks.csv`に保存済み。
+- **留保**: 実際の本番学習では9基本タスク×学習エピソード数で足りるかは未検証。
+  この方式は「動くかどうか・汎化を測れるか」の検証用であり、本番の学習データ
+  設計（もっと広いデータが必要になるはず）とは切り離して考える。
+
+## 方針2-1: テストケースの摂動カテゴリはBackground Textures/Light Conditions
+に限定する（2026-08-02決定）
+
+方針2のholdoutタスクから難易度L1〜L5のテストケースを選ぶ際、摂動カテゴリは
+LIBERO-plusが持つ7種類（Background Textures / Light Conditions / Camera
+Viewpoints / Robot Initial States / Sensor Noise / Objects Layout / Language
+Instructions）のうち、Background TexturesとLight Conditionsの2つだけに限定した。
+
+- **技術的な理由**: `compe/t1/register.py`の初期状態ファイル読み込み
+  （`_SUFFIX_RE = re.compile(r"_light_[^.]*|_table_\d+")`）は、`_table_N`と
+  `_light_N`という接尾辞だけを取り除いて元タスクの`.pruned_init`を探す仕組み。
+  実際にリポジトリを確認したところ、Camera Viewpoints・Robot Initial States・
+  Sensor Noiseの3カテゴリは対応する`.bddl`/`.pruned_init`ファイルがローカルに
+  一切存在せず、Objects Layoutは別ディレクトリ（`init_files/libero_newobj/`）
+  に依存していた。**Language Instructionsも当初はregexの拡張だけで対応できる
+  と見ていたが、実際に改造を試みたところ、`task_classification.json`が難易度
+  ラベルを付与している変体名（`_language_N_view_0_0_100_0_0_initstate_0`の
+  ような接尾辞付き）に対応する`.bddl`自体が3スイートとも1件も存在しないことが
+  判明し、regexの修正だけでは解決しないと分かった**（接尾辞なしの
+  `_language_N.bddl`は実在するが、そちらは難易度が付与されていない）。詳細な
+  調査記録は[competition_analysis.md](competition_analysis.md)の「LIBERO-plusの
+  摂動カテゴリ別・ローカル資産カバレッジ」参照。Background TexturesとLight
+  Conditionsの2つだけが現状の`register.py`のまま確実に動く。
+- **Language Instructionsが本番採点で使われているか**: **不明**。
+  `compe/t1/T1_TASKS.csv`（本番と同形式・同難易度帯とされる練習問題4件）は
+  Background TexturesとLight Conditionsしか使っておらず、Language
+  Instructionsへの言及はどの手元資料にもない。ただしLIBERO-plus本体の
+  正式な7カテゴリの1つではあるため、本番の非公開タスクセットで使われて
+  いない証拠にもならない。判断材料が手元にない、というのが正直なところ。
+- **`register.py`を書き換えて対応カテゴリを増やすのはルール的にどうか**:
+  配布された競技ルール文書（`PARC2026開発コンペティション_予選`資料）を
+  確認したが、`compe/t1/register.py`のような練習用ローカルツールの改変を
+  直接禁止する記述は見当たらなかった。同資料の禁止事項は主に「評価環境への
+  外部アクセス」「scene ID/task ID/評価seed等をキーにした行動テーブルによる
+  ズル」「評価環境専用のガードレールに抵触するコード」など、**提出する
+  policyの本番評価時の挙動**に関するものであり、`compe/t1/`はTrack1の
+  example taskをローカル登録するための練習ツールであって提出物
+  （`submission_template/`）には含まれない。そのため書き換えても提出ルール
+  には抵触しなさそうだが、これはルール文書からの推測であり、「練習ツールの
+  改変は自由」と明記されているわけではない。**不明点が残ることは承知の上で
+  現状はBG/Light限定のまま進める**判断とした（regexの拡張は今回は行っていない）。
 
 ## 方針3: ベースモデルにSmolVLA（`lerobot/smolvla_libero_plus`）を採用し、まず追加学習なしで動作確認する（2026-08-02決定）
 

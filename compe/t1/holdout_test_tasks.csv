@@ -1,0 +1,16 @@
+task_num,task_id,instruction,libero_plus_id,suite,category,difficulty_level
+1,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_12,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,76,libero_spatial,Background Textures,L1
+2,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_15,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,77,libero_spatial,Background Textures,L2
+3,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_2,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,80,libero_spatial,Background Textures,L3
+4,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_4,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,88,libero_spatial,Background Textures,L4
+5,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_light_18,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,2212,libero_spatial,Light Conditions,L5
+6,pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_1,Pick the bbq sauce and place it in the basket,33,libero_object,Background Textures,L1
+7,pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_12,Pick the bbq sauce and place it in the basket,35,libero_object,Background Textures,L2
+8,pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_16,Pick the bbq sauce and place it in the basket,39,libero_object,Background Textures,L3
+9,pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_3,Pick the bbq sauce and place it in the basket,53,libero_object,Background Textures,L4
+10,pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_9,Pick the bbq sauce and place it in the basket,58,libero_object,Background Textures,L5
+11,put_the_bowl_on_the_stove_table_7,Put the bowl on the stove,138,libero_goal,Background Textures,L1
+12,put_the_bowl_on_the_stove_table_4,Put the bowl on the stove,136,libero_goal,Background Textures,L2
+13,put_the_bowl_on_the_stove_table_1,Put the bowl on the stove,133,libero_goal,Background Textures,L3
+14,put_the_bowl_on_the_stove_light_11,Put the bowl on the stove,2467,libero_goal,Light Conditions,L4
+15,put_the_bowl_on_the_stove_light_15,Put the bowl on the stove,2468,libero_goal,Light Conditions,L5

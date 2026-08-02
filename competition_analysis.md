@@ -316,6 +316,64 @@ VRAM・速度に余裕があっても、提出物の推論側の制約（上記�
 
 ---
 
+## LIBERO-plusの摂動カテゴリ別・ローカル資産カバレッジ（2026-08-02調査）
+
+自前のholdoutテストケース（`compe/t1/holdout_test_tasks.csv`）を組む過程で、
+LIBERO-plusが定義する7つの摂動カテゴリ（`task_classification.json`）のうち、
+**このリポジトリのチェックアウトに実体ファイル（`.bddl`/`.pruned_init`）が
+存在するのは一部だけ**であることが分かった。本番の評価ハーネスの実装を
+直接見ることはできないが、この非対称性は本番側の仕組みを推測する手がかりに
+なるかもしれないので記録しておく。
+
+### カテゴリ別の状態
+
+| カテゴリ | `.bddl`実体 | `.pruned_init`実体 | 備考 |
+|---|---|---|---|
+| Background Textures (`_table_N`) | ○ | ○（base名を共有、`register.py`の`_SUFFIX_RE`が対応済み） | 難易度ラベルとファイルが一致 |
+| Light Conditions (`_light_N`) | ○ | ○（base名を共有、regex対応済み） | 同上 |
+| Objects Layout (`_add_N`) | ローカルに見当たらず | `init_files/libero_newobj/`配下に別途あり | ディレクトリ構成が`register.py`の想定と異なる |
+| Camera Viewpoints / Robot Initial States (`_view_..._initstate_N`) | **存在しない** | **存在しない** | 3スイートとも0件 |
+| Sensor Noise (`_noise_N`) | **存在しない** | **存在しない** | 同上 |
+| Language Instructions | **公式カタログの名前（`_language_N_view_0_0_100_0_0_initstate_0`のような接尾辞付き）には対応する`.bddl`が1件も無い** | 同左 | `libero_spatial`0/390、`libero_object`0/354、`libero_goal`0/410で全滅を確認 |
+
+### Language Instructionsの厄介な点
+
+`task_classification.json`が難易度L1〜L5を付与しているLanguage Instructions
+バリアント名は、実際には接尾辞に`_view_0_0_100_0_0_initstate_0`のような
+カメラ視点・ロボット初期状態のパラメータ（デフォルト値のまま）が付加された
+複合名になっている。一方、**接尾辞なしの`<base>_language_N.bddl`という
+シンプルな名前のファイルは実在する**が、そちらは`task_classification.json`に
+一切登録されておらず、公式の難易度ラベルが付いていない。
+
+- 「難易度が分かる名前」→ 実体ファイルが無い
+- 「実体ファイルがある名前」→ 難易度が分からない
+
+という食い違いが起きている。
+
+### 推測（裏取りできていない仮説）
+
+Camera Viewpoints・Robot Initial States・Sensor Noise・
+（難易度付き）Language Instructionsの4カテゴリは、静的な`.bddl`/
+`.pruned_init`ファイルとして配布されているのではなく、**本番の非公開評価
+ハーネス側で、ベースタスクのシーンに対してカメラ視点・ロボット初期関節角・
+観測ノイズ・指示文言い換えを実行時に動的に適用する**形で実装されている
+可能性がある。ローカルのLIBERO-plusチェックアウトはBackground Textures /
+Light Conditions / Objects Layoutのように「物理的なシーン配置そのものが
+変わる摂動」だけを静的ファイルとして持ち、残りは評価時の処理として別途
+実装されている、という仮説。ただしこれは`assets.zip`（HFの
+`Sylvest/LIBERO-plus`データセット、レンダリング用アセット）側に含まれて
+いないかまでは未確認であり、裏取りできていない。
+
+### この調査を踏まえた対応（2026-08-02決定）
+
+`register.py`の`_SUFFIX_RE`を拡張してLanguage Instructionsに対応させる案を
+検討したが、上記の通り**そもそも難易度付きの実体ファイルが存在しないため
+regexの修正だけでは解決しない**と判断し、見送った。holdoutテストケースは
+Background Textures / Light Conditionsの2カテゴリのみを使う方針
+（[my_strategy.md](my_strategy.md)の方針2-1）を維持する。
+
+---
+
 ## SmolVLA (`lerobot/smolvla_libero_plus`) を policy_server.py に組み込む際の入出力仕様
 
 `submission_template/policy_server.py`にSmolVLAベースの推論を実装するにあたり、
