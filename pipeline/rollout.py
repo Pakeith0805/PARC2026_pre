@@ -38,6 +38,15 @@ class EpisodeResult:
 
 
     collided: bool = False
+    # ゴール条件自体は達成したか（衝突とは独立。collided=Trueで0点になった
+    # エピソードでも、タスク自体はこなせていたかを区別するための値）。
+    goal_achieved: bool = False
+    # 非対象物体ごとの最大変位量（m）。閾値ぎりぎりで免れたか、余裕があったかの
+    # 定量化に使う。
+    object_max_disp: dict[str, float] = field(default_factory=dict)
+    # 変位が閾値を初めて超えたstep（無ければNone）。衝突がエピソードの
+    # どの局面で起きたかを見るための値。
+    collision_step: int | None = None
 
     @property
     def trajectory(self) -> list[np.ndarray]:
@@ -185,6 +194,7 @@ class RolloutExecutor:
                 and k[:-4] not in obj_of_interest
             }
         object_max_disp: dict[str, float] = {}
+        collision_step: int | None = None
 
 
         episode_seed = self.config.seed + episode_id
@@ -222,6 +232,8 @@ class RolloutExecutor:
                     d = float(np.sum(np.abs(np.asarray(cur) - p0)))
                     if d > object_max_disp.get(name, 0.0):
                         object_max_disp[name] = d
+                    if collision_step is None and d > collision_threshold:
+                        collision_step = step
 
             total_steps = step + 1
 
@@ -254,6 +266,9 @@ class RolloutExecutor:
             actions=actions_log,
             rewards=rewards_log,
             collided=collided,
+            goal_achieved=bool(done),
+            object_max_disp=object_max_disp,
+            collision_step=collision_step,
         )
 
     def evaluate_tasks(
