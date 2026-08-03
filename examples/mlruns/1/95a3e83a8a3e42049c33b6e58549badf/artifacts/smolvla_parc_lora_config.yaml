@@ -1,0 +1,171 @@
+# smolvla_parc_lora.ipynb の設定ファイル（Hydra）。
+# Notebookのセル8（学習・評価条件を設定する）がこれを読み込む。
+#
+# 値を変えたいときは、このファイルを直接編集してNotebookのセル8以降を
+# 再実行するのが基本。1回だけ・一時的に変えたい場合は、Notebook側の
+# HYDRA_OVERRIDES（例: ["mode=full_submission", "training.steps=5000"]）で
+# 上書きもできる（このファイル自体は変更しなくてよい）。
+#
+# holdoutタスク・テストケースの選定根拠は my_strategy.md の方針2・2-1、
+# competition_analysis.md の関連セクション参照。
+
+mode: holdout_eval # "holdout_eval" | "full_submission"
+
+model:
+  base_model_repo: lerobot/smolvla_libero_plus
+  base_model_revision: 7bb70aa5bc92b82c9239142775d3a173103567ff
+  vlm_repo: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+
+dataset:
+  repo_id: lerobot/libero_plus
+  revision: f3f49f426d75030177b18778374005bc12ccd588
+  train_episodes_per_task: 5
+
+training:
+  steps: 18000
+  log_freq: 100
+  batch_size: 1
+  learning_rate: 3.0e-4
+  final_learning_rate: 3.0e-5
+  warmup_steps: 100
+  seed: 42
+
+lora:
+  r: 16
+  alpha: 16
+
+evaluation:
+  episodes_per_task: 3
+  seed: 2026
+
+mlflow:
+  experiment_name: smolvla_parc_lora
+
+# 3スイート、各10基本タスク（自然文の指示）。データセット内のtask labelとは
+# notebook側のnormalize_task_nameによる表記ゆれ吸収（大文字小文字・
+# アンダースコア・句読点の違いを無視）を前提に照合する。万一表記が
+# 一致しない場合は、notebook側のセルで対象タスク名を明示した
+# RuntimeErrorとして検出される。
+suite_task_names:
+  libero_spatial:
+    - pick up the black bowl from table center and place it on the plate
+    - pick up the black bowl next to the cookie box and place it on the plate
+    - pick up the black bowl next to the plate and place it on the plate
+    - pick up the black bowl next to the ramekin and place it on the plate
+    - pick up the black bowl on the cookie box and place it on the plate
+    - pick up the black bowl on the ramekin and place it on the plate
+    - pick up the black bowl on the stove and place it on the plate
+    - pick up the black bowl on the wooden cabinet and place it on the plate
+    - pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate
+    - pick up the black bowl between the plate and the ramekin and place it on the plate
+  libero_object:
+    - pick up the alphabet soup and place it in the basket
+    - pick up the bbq sauce and place it in the basket
+    - pick up the butter and place it in the basket
+    - pick up the chocolate pudding and place it in the basket
+    - pick up the cream cheese and place it in the basket
+    - pick up the ketchup and place it in the basket
+    - pick up the milk and place it in the basket
+    - pick up the orange juice and place it in the basket
+    - pick up the salad dressing and place it in the basket
+    - pick up the tomato sauce and place it in the basket
+  libero_goal:
+    - open the middle drawer of the cabinet
+    - open the top drawer and put the bowl inside
+    - push the plate to the front of the stove
+    - put the bowl on the plate
+    - put the bowl on the stove
+    - put the bowl on top of the cabinet
+    - put the cream cheese in the bowl
+    - put the wine bottle on the rack
+    - put the wine bottle on top of the cabinet
+    - turn on the stove
+
+# 各suiteにつき1基本タスクをholdout（学習から除外）する。
+# 選定根拠は my_strategy.md の方針2 を参照（tomato_sauceではなくbbq_sauceに
+# 変更した理由も含む）。
+holdout_task_names:
+  libero_spatial: pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate
+  libero_object: pick up the bbq sauce and place it in the basket
+  libero_goal: put the bowl on the stove
+
+# holdout_eval モードでのみ使用するテストケース（L1〜L5 x 3suite = 15件）。
+# compe/t1/holdout_test_tasks.csv と同一内容。摂動カテゴリをBackground
+# Textures/Light Conditionsに限定した理由はcompetition_analysis.md参照
+# （Camera Viewpoints等はローカルに実体ファイルが存在しないため）。
+holdout_test_tasks:
+  - task_id: pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_12
+    instruction: Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate
+    suite: libero_spatial
+    category: Background Textures
+    difficulty_level: L1
+  - task_id: pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_15
+    instruction: Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate
+    suite: libero_spatial
+    category: Background Textures
+    difficulty_level: L2
+  - task_id: pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_2
+    instruction: Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate
+    suite: libero_spatial
+    category: Background Textures
+    difficulty_level: L3
+  - task_id: pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_4
+    instruction: Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate
+    suite: libero_spatial
+    category: Background Textures
+    difficulty_level: L4
+  - task_id: pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_light_18
+    instruction: Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate
+    suite: libero_spatial
+    category: Light Conditions
+    difficulty_level: L5
+  - task_id: pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_1
+    instruction: Pick the bbq sauce and place it in the basket
+    suite: libero_object
+    category: Background Textures
+    difficulty_level: L1
+  - task_id: pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_12
+    instruction: Pick the bbq sauce and place it in the basket
+    suite: libero_object
+    category: Background Textures
+    difficulty_level: L2
+  - task_id: pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_16
+    instruction: Pick the bbq sauce and place it in the basket
+    suite: libero_object
+    category: Background Textures
+    difficulty_level: L3
+  - task_id: pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_3
+    instruction: Pick the bbq sauce and place it in the basket
+    suite: libero_object
+    category: Background Textures
+    difficulty_level: L4
+  - task_id: pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_9
+    instruction: Pick the bbq sauce and place it in the basket
+    suite: libero_object
+    category: Background Textures
+    difficulty_level: L5
+  - task_id: put_the_bowl_on_the_stove_table_7
+    instruction: Put the bowl on the stove
+    suite: libero_goal
+    category: Background Textures
+    difficulty_level: L1
+  - task_id: put_the_bowl_on_the_stove_table_4
+    instruction: Put the bowl on the stove
+    suite: libero_goal
+    category: Background Textures
+    difficulty_level: L2
+  - task_id: put_the_bowl_on_the_stove_table_1
+    instruction: Put the bowl on the stove
+    suite: libero_goal
+    category: Background Textures
+    difficulty_level: L3
+  - task_id: put_the_bowl_on_the_stove_light_11
+    instruction: Put the bowl on the stove
+    suite: libero_goal
+    category: Light Conditions
+    difficulty_level: L4
+  - task_id: put_the_bowl_on_the_stove_light_15
+    instruction: Put the bowl on the stove
+    suite: libero_goal
+    category: Light Conditions
+    difficulty_level: L5
