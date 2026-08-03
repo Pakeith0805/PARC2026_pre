@@ -22,7 +22,7 @@ dataset:
   train_episodes_per_task: 5
 
 training:
-  steps: 18000
+  steps: 40000
   log_freq: 100
   batch_size: 8
   learning_rate: 3.0e-4
@@ -39,7 +39,7 @@ evaluation:
   seed: 2026
 
 mlflow:
-  experiment_name: smolvla_parc_lora
+  experiment_name: smolvla_parc_lora_firstex
 
 # 3スイート、各10基本タスク（自然文の指示）。データセット内のtask labelとは
 # notebook側のnormalize_task_nameによる表記ゆれ吸収（大文字小文字・
