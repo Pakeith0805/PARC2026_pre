@@ -170,5 +170,43 @@ policy_server↔pipelineのエンドツーエンド疎通を確認する段取�
   に向けて同じ`download_model_weights.py`的な手順（または直接ファイル配置）で
   同梱し直す必要がある。
 
+## 方針5: lerobotをPython 3.10で入る0.4.4に固定する（2026-08-04決定）
+
+実際に採点環境へ提出したところ、`lerobot==0.6.0`が見つからずインストールに
+失敗して0点になった（採点ログ: `Could not find a version that satisfies the
+requirement lerobot==0.6.0`）。原因は採点環境がPython 3.10.12で、
+`lerobot>=0.5.0`は`requires-python>=3.12`のためそもそもpip installできない
+という、examples/のColabノートブック（Python 3.12前提）と本番環境のPython版
+のズレだった。対応として`lerobot[smolvla]==0.4.4`（Python 3.10で入る最新版）
+に切り替えることを決定。
+
+- **なぜ0.4.4で大丈夫と判断したか**: 単にバージョンを下げただけでなく、
+  実際にPython 3.10 + lerobot 0.4.4の環境を作り、`lerobot/smolvla_libero_plus`
+  チェックポイントを実際にロード・推論させて動作確認した（`.local_libs/verify/
+  venv_py310_check/`）。0.4.4にも`SmolVLAPolicy`・processor pipeline
+  （`rename_observations_processor`等の同じレジストリ名）が既にあり、
+  チェックポイントの`config.json`もそのまま読めた。`validate_submission.py`の
+  静的・動的チェック（zip展開→サーバー起動→`/health`→`/reset`→`/act`）も
+  この環境でPASS（errors=0）を確認済み。
+- **importパスの差分**: `from lerobot.configs import PreTrainedConfig`は
+  0.6.0では通るが0.4.4には無い（`lerobot.configs.policies`に置き換え）。
+  `policy_server.py`はこちらに合わせて修正済み。
+- **requirements.txtからtorch/huggingface_hubの明示指定を外した**: 採点環境の
+  提出物用venvは`--system-site-packages`付きで作られ、書かなかったライブラリは
+  プリインストール版（`torch==2.11.0+cu130`等）がそのまま使われる
+  （README.mdの「採点環境」節に明記）。`lerobot==0.4.4`自体が`torch<2.11.0`を
+  要求するため、この行を足すとpipがCUDA12系torchへ巻き戻すが、これは想定内の
+  挙動としてREADME.mdに書かれている。
+- **一次情報の出どころ**: 採点環境の正確な構成（Python版・torch版・
+  `--system-site-packages`・プリインストール一覧）は、ユーザーが実際の採点
+  ログと、配布環境の更新版README（`README (1).md`、採点環境節が追記された版）
+  を共有してくれたことで判明した。以前の`overview.md`/`competition_analysis.md`
+  の記述はこの情報が無い時点のものだったため、あわせて更新した。
+- **含意**: 今後`examples/`のColabノートブックでLoRA学習する際も、学習は
+  Python 3.12のColab環境で行って構わない（採点環境とは無関係）が、
+  **マージ後の推論コード（`policy_server.py`）は必ずPython 3.10 + lerobot 0.4.4
+  で動作確認してから提出すること**。ローカル検証を3.12環境だけで済ませると
+  この非互換に気づけない。
+
 ---
-最終更新: 2026-08-02
+最終更新: 2026-08-04

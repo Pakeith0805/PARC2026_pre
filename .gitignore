@@ -9,3 +9,4 @@ env.sh
 .local_libs/
 submission_template/model_weights/
 mlruns/
+submissions/

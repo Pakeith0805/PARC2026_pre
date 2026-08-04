@@ -30,15 +30,26 @@ python src/download_model_weights.py
 **symlinkに関する注意**: 既定のHFキャッシュは`blobs/`の実体を`snapshots/`から
 symlinkで参照する構造だが、`validate_submission.py`の`zip.slip_symlink`
 チェックがsymlinkエントリを一律拒否するため、そのままでは提出zipに含められない。
-このスクリプトは`HF_HUB_DISABLE_SYMLINKS=1`を設定し、実ファイルとして展開させる
-ことでこれを回避している（2026-08-02、`zip -rq -X` → `validate_submission.py`
-の静的・動的チェック両方でPASSすることを確認済み）。
+`HF_HUB_DISABLE_SYMLINKS`という環境変数はhuggingface_hubの版によって効いたり
+効かなかったりする（`lerobot==0.4.4`が引く`huggingface_hub==0.35.3`では既に
+廃止されていて無視される）ため、これに頼らず、ダウンロード後に
+`_materialize_symlinks()`でsymlinkを実ファイルへ手動で置き換えている。
+併せて、コピー元として不要になった`blobs/`（実体の重複）と、ダウンロード時の
+一時ログ`xet/`も削除してサイズを詰めている。
+`zip -rq -X` → `validate_submission.py`の静的・動的チェック両方でPASSする
+ことを確認済み（2026-08-04）。
 
 `model_weights/`は`.gitignore`済み（約870MB、`submission_template/requirements.txt`
-の`lerobot[smolvla]==0.6.0`本体とは別に、モデル重み自体もこのスクリプトで
+の`lerobot[smolvla]==0.4.4`本体とは別に、モデル重み自体もこのスクリプトで
 再生成できるためgit管理しない）。提出zipを作るときは
-`zip -r submission.zip policy_server.py requirements.txt model_weights/`
+`submission_template/`で以下を実行する
 （[submission_template/README.md](../submission_template/README.md)参照）。
+`submissions/`も`.gitignore`済み。
+
+```bash
+cd submission_template
+zip -rq -X ../submissions/submission.zip policy_server.py requirements.txt model_weights/
+```
 
 ## record_rollout.py
 
@@ -58,16 +69,29 @@ symlinkで参照する構造だが、`validate_submission.py`の`zip.slip_symlin
 バージョン固定）と、ポリシー側が使う`torch`/`lerobot`（`numpy>=2.0`を要求）は
 同じPython環境に共存できない。そのため実行は必ず2プロセスに分ける。
 
+**採点環境はPython 3.10.12。** ローカルの検証も同じ3.10系のvenvで行うこと
+（詳細は[README.md](../README.md)の「採点環境」節参照。`lerobot>=0.5.0`は
+`requires-python>=3.12`のためPython 3.10には入らず、`submission_template/
+requirements.txt`は Python 3.10 で入る最新版 `lerobot[smolvla]==0.4.4` を
+指定している。3.12のvenvで検証すると、この非互換に気づかないまま提出して
+しまうので注意——実際に一度これで採点が失敗した）。
+
 1. **ポリシーサーバー用の別venv**でモデルを動かす（GPU推奨）。例:
 
    ```bash
-   uv venv --python 3.12 .venv_policy
+   uv venv --python 3.10 .venv_policy
    source .venv_policy/bin/activate
-   uv pip install torch --index-url https://download.pytorch.org/whl/cu128 \
-       --extra-index-url https://pypi.org/simple
    uv pip install -r submission_template/requirements.txt
    python submission_template/policy_server.py --port 8000
    ```
+
+   採点環境の提出物用venvは`--system-site-packages`付きで作られ、
+   `requirements.txt`に書かなかったライブラリ（`torch`等）はプリインストール
+   済みの版（`torch==2.11.0+cu130`等）がそのまま使われる。ローカルにはその
+   プリインストールが無いので、上記のように`torch`を明示的に入れる必要がある
+   （`lerobot[smolvla]==0.4.4`が`torch<2.11.0`を要求するため、pipが自動で
+   適切な版を選ぶ。CUDA12系になるが、[README.md](../README.md)の「CUDA 12系の
+   torchを使用する場合の注意」に記載の通り採点環境でも動作する想定）。
 
 2. **このリポジトリの`venv/`**（`env.sh`）でLIBERO環境を動かし、
    `record_rollout.py`からHTTP経由でポリシーサーバーを呼ぶ。

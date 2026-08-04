@@ -9,7 +9,14 @@ numpy>=1.19
 # torch>=2.0
 # transformers>=4.30
 
-# SmolVLA (examples/smolvla_libero_spatial_lora.ipynb と同じ v0.6.0 系列)
-torch>=2.7
-lerobot[smolvla]==0.6.0
-huggingface_hub>=0.25
+# SmolVLA。examples/ のノートブックはColab(Python 3.12)向けにlerobot==0.6.0を
+# 使っているが、採点環境はPython 3.10.12で、lerobot>=0.5.0はrequires-python>=3.12
+# のためpip installできない。Python 3.10でインストール可能な最新版0.4.4を使う
+# （config.json等のチェックポイント形式に0.6.0との互換性があることを実機確認済み）。
+# torch・huggingface_hub は明示的に書かない: 採点環境の提出物用venvは
+# --system-site-packages で作られ、書かなければプリインストール版
+# （torch==2.11.0+cu130 等）がそのまま使われる。lerobot 0.4.4 は
+# torch<2.11.0 を要求するため、この行を足すとpipがCUDA12系torchへ
+# 巻き戻すが、これはREADME.mdに記載の想定内の挙動（nvidia-*-cu12一式が
+# 一緒に入る限り動作する）。
+lerobot[smolvla]==0.4.4

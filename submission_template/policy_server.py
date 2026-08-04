@@ -92,7 +92,10 @@ class MyPolicy(BasePolicy): # BasePolicyを継承
 
         import torch
         from huggingface_hub import snapshot_download
-        from lerobot.configs import PreTrainedConfig
+        # lerobot 0.5+ は Python>=3.12 必須で採点環境(Python 3.10.12)では
+        # pip installできないため、lerobot==0.4.4 を使う前提のimportパスにしている
+        # （`from lerobot.configs import PreTrainedConfig` は0.4.4には無い）。
+        from lerobot.configs.policies import PreTrainedConfig
         from lerobot.policies.factory import make_pre_post_processors
         from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 

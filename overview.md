@@ -5,7 +5,7 @@
 関する情報を1ファイルに詰め込んだ統合ノート。新しい会話でまず読む用、あるいは
 自分が全体像を素早く思い出す用。
 
-**位置づけの注意**: これは2026-08-02時点のスナップショット。詳細な根拠・調査の
+**位置づけの注意**: これは2026-08-04時点のスナップショット。詳細な根拠・調査の
 経緯は元の2ファイルにあり、そちらが一次情報。このファイルは自動同期していない
 ので、元ファイルが更新されたら手動でこちらにも反映する必要がある。
 
@@ -42,7 +42,7 @@
 - **⚠️ `requirements.txt`に`git+https://…`や`--index-url`等の外部ソース指定は
   禁止。採点環境は外部通信を遮断する。** → これは`pip install`だけの制約ではなく
   「採点環境はネットワークに出られない」という一般的な事実の帰結だと考えられる
-  （[第11節](#11-要対応要注意点まだ手を付けていないこと)に直結する重要な
+  （[第12節](#12-要対応要注意点まだ手を付けていないこと)に直結する重要な
   未対応課題あり）。
 - 提出前チェック: `python validate_submission.py submission.zip`
   （zip健全性・サイズ上限・必須ファイル・エンドポイント・起動スモークテストまで）。
@@ -93,11 +93,21 @@ NaN/Infを含まないこと、10秒以内に返すことが必須。
 
 ## 5. ハードウェア・サイズ制約
 
-- **推論（本番）**: L4（24GB VRAM）、単一GPU、モデル並列不可。
+- **推論（本番）**: GPUコンテナ上（旧情報ではL4、24GB VRAM。最新の
+  `README.md`「採点環境」節ではGPUモデル名は明記されていないが矛盾する情報も
+  無いので維持——要再確認）、単一GPU、モデル並列不可。
 - **提出zip**: 20GB以内（展開後・モデル単体にも上限あり、いずれも20GB級）。
 - **学習（自分の手元）**: これは別枠。開発機`askr5090`の**RTX5090（31.4GB）**が
   使える。学習側のVRAM・速度に余裕があっても、提出物の推論側の制約（上記）は
   変わらない点に注意——「学習は贅沢に、推論は軽量に」が前提。
+- **採点環境の正確な構成（2026-08-04、`README.md`「採点環境」節で判明）**:
+  `nvidia/cuda:13.0.3-cudnn-devel-ubuntu22.04`、**Python 3.10.12**、
+  **torch 2.11.0+cu130（プリインストール済み）**、`MUJOCO_GL=EGL`。提出物の
+  依存は**`--system-site-packages`付きの専用venv**に`pip install -r
+  requirements.txt`される。`requirements.txt`に書かなかったライブラリは
+  プリインストール版がそのまま使われる。詳細は
+  [competition_analysis.md](competition_analysis.md)の「採点環境の正確な仕様が
+  判明」参照。
 
 → 結論: SmolVLA級（数億パラメータ）の軽量VLAが現実的な選択肢。OpenVLA-7B等の
 数十億パラメータ級はfp16でも重みだけ約14GBとなり厳しい。ゼロからの学習は
@@ -155,17 +165,56 @@ Action生成に実質的に寄与する必要がある」という要件にも�
   `reset()`で`self.policy.reset()`を呼べばクリアされる。自前実装不要。
 - 起動高速化: `config.load_vlm_weights = False`でVLM初期重みの二重ダウンロード
   を回避（120秒起動制約対策）。
-- `requirements.txt`に`torch>=2.7`, `lerobot[smolvla]==0.6.0`,
-  `huggingface_hub>=0.25`を追加済み。
+- `requirements.txt`に`lerobot[smolvla]==0.4.4`を追加済み（**採点環境が
+  Python 3.10.12のため**。`lerobot>=0.5.0`は`requires-python>=3.12`で
+  入らない。詳細は次節「重大インシデント」参照）。
+  `torch`/`huggingface_hub`は明示せず、採点環境のプリインストール版
+  （`--system-site-packages`経由）に任せる方針。
 - **オフライン起動対応**: `src/download_model_weights.py`で
   `submission_template/model_weights/hf_cache/`にモデル一式（symlinkなし形式）
   を事前ダウンロード。あれば`HF_HUB_OFFLINE=1`で完全オフライン起動する
-  （詳細は[第11節](#11-要対応要注意点まだ手を付けていないこと)）。
+  （詳細は[第12節](#12-要対応要注意点まだ手を付けていないこと)）。
 - 動画付きローカル評価ツール `src/record_rollout.py`（使い方は`src/README.md`）
   を追加。`pipeline/rollout.py`と同じ成功判定ロジックを踏襲しつつ動画も残す。
   `pipeline/`本体・`submission_template/`本体は無改変。
 
-## 9. 動作確認結果（2026-08-02、`askr5090`にて）
+## 9. 重大インシデント: 採点環境でlerobot==0.6.0が入らず0点（2026-08-04）
+
+実際に採点環境へ提出したところ、依存インストールの段階で失敗し0点になった。
+
+```
+ERROR: Could not find a version that satisfies the requirement lerobot==0.6.0
+  (from versions: 0.1.0, 0.3.2, 0.3.3, 0.4.0, 0.4.1, 0.4.2, 0.4.3, 0.4.4)
+```
+
+- **原因**: PyPIの`lerobot`は`0.5.0`以降すべて`requires-python>=3.12`だが、
+  採点環境はPython 3.10.12（[第5節](#5-ハードウェアサイズ制約)参照）。
+  examples/notebookも自分のローカル検証（`.local_libs/verify/venv_smolvla/`）
+  もPython 3.12で行っていたため、この版のズレに気づけなかった。
+- **対応**: Python 3.10で入る最新版`lerobot[smolvla]==0.4.4`に切り替え。
+  0.4.4にも同じSmolVLA実装・processor pipelineが既にあり、チェックポイントの
+  `config.json`もそのまま読める。`from lerobot.configs import
+  PreTrainedConfig`は0.6.0のみ通る書き方だったため、両バージョンで動く
+  `from lerobot.configs.policies import PreTrainedConfig`に修正した。
+  Python 3.10の別venv（`.local_libs/verify/venv_py310_check/`）で
+  チェックポイントのロード・推論・`validate_submission.py`の静的/動的
+  チェックまで実際に通ることを確認済み。
+- **教訓**: 学習用ノートブック（Colab、Python 3.12）と推論コード
+  （採点環境、Python 3.10）の前提Python版が違うことに、ローカル検証だけでは
+  気づけなかった。今後はPython 3.10のvenvで最終確認してから提出する
+  （詳細・requirements.txtの書き方は[my_strategy.md](my_strategy.md)方針5、
+  [competition_analysis.md](competition_analysis.md)の該当節参照）。
+- **修正後、ベース重み（LoRA未実施）での提出zipを再作成・再検証済み
+  （2026-08-04）**: `submissions/submission_smolvla_base_2026-08-04.zip`
+  （約686MB、`.gitignore`済み）。作成中にもう1つ罠があった:
+  `HF_HUB_DISABLE_SYMLINKS`環境変数は`lerobot==0.4.4`が引く
+  `huggingface_hub==0.35.3`では既に廃止されていて効かず、symlinkが復活していた。
+  `src/download_model_weights.py`にダウンロード後の後処理
+  （`_materialize_symlinks()`でsymlinkを実ファイルへ置換、不要になった
+  `blobs/`と一時ログ`xet/`を削除）を追加して解決。この状態で
+  `validate_submission.py`の静的・動的チェック両方PASS（errors=0）を確認済み。
+
+## 10. 動作確認結果（2026-08-02、`askr5090`にて）
 
 - **GPU環境**: `nvidia-smi`は`Driver/library version mismatch`で動かないが、
   `libcuda.so`直叩きでCUDA計算自体は正常と確認（RTX5090、31.4GB）。壊れているのは
@@ -184,7 +233,7 @@ Action生成に実質的に寄与する必要がある」という要件にも�
 - **動画コーデックの罠**: `cv2.VideoWriter`既定の`mp4v`はブラウザ`<video>`で
   再生不可。`imageio`+`imageio-ffmpeg`（`libx264`, `yuv420p`）で解決。
 
-## 10. 会話内で出た未採用の戦略仮説（Claude発、まだ決定していない）
+## 11. 会話内で出た未採用の戦略仮説（Claude発、まだ決定していない）
 
 - **学習時の分布拡張アプローチ**: Track3（未知タスク）対策として、個々のタスクを
   覚えさせるのではなく「タスクの構成要素（物体・動作・指示表現）の組み合わせ方への
@@ -197,7 +246,7 @@ Action生成に実質的に寄与する必要がある」という要件にも�
   テクスチャ・照明条件への頑健性なので、視覚エンコーダを凍結したままだと
   そこに直接対応できない可能性がある。まだ採用は決めていない。
 
-## 11. ⚠️ 要対応・要注意点（まだ手を付けていないこと）
+## 12. ⚠️ 要対応・要注意点（まだ手を付けていないこと）
 
 - **【対応済み・2026-08-02】オフライン制約への対応**: [README.md](README.md)に
   「採点環境は外部通信を遮断する」と明記されており、`MyPolicy`がデフォルトで
@@ -219,7 +268,7 @@ Action生成に実質的に寄与する必要がある」という要件にも�
 - 予選/本選の参加者数の食い違い（500名 vs 200名）、本選のTrack構成の正式資料
   未確認（6/19説明会情報のみ）。Slack等での最新確認が必要。
 
-## 12. ファイルマップ
+## 13. ファイルマップ
 
 | パス | 役割 |
 |---|---|
@@ -233,4 +282,4 @@ Action生成に実質的に寄与する必要がある」という要件にも�
 | `.local_libs/verify/` | 動作確認用の使い捨てスクリプト・専用venv・ログ（`.gitignore`済み） |
 
 ---
-最終更新: 2026-08-02
+最終更新: 2026-08-04

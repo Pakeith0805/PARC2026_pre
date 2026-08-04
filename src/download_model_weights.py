@@ -34,12 +34,33 @@ os.environ["HF_HOME"] = str(_HF_CACHE_DIR)
 os.environ.pop("HF_HUB_OFFLINE", None)
 # 既定のHFキャッシュは blobs/ の実体を snapshots/ からsymlinkで参照する構造だが、
 # validate_submission.py の zip.slip_symlink チェックがsymlinkエントリを
-# 一律拒否するため、提出zipに含められない。symlinkを使わず実ファイルとして
-# 展開させる。
-os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
+# 一律拒否するため、提出zipに含められない。HF_HUB_DISABLE_SYMLINKS という
+# 環境変数はhuggingface_hubの版によって効いたり効かなかったりする
+# （lerobot 0.4.4が引くhuggingface_hub 0.35.3では既に廃止されており無視される）
+# ため、これに頼らず、ダウンロード後に _materialize_symlinks() で
+# symlinkを実ファイルへ変換する。
 
 if str(_REPO_ROOT / "submission_template") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "submission_template"))
+
+
+def _materialize_symlinks(root: Path) -> int:
+    """root配下のsymlinkを、リンク先の実体をコピーした通常ファイルに置き換える。
+
+    HFキャッシュはblobs/の実体をsnapshots/からsymlinkで参照する構造だが、
+    zip提出物はsymlinkを含められない（validate_submission.pyが拒否する）。
+    """
+    import shutil
+
+    count = 0
+    for path in sorted(root.rglob("*")):
+        if not path.is_symlink():
+            continue
+        target = path.resolve()
+        path.unlink()
+        shutil.copy2(target, path)
+        count += 1
+    return count
 
 
 def main() -> None:
@@ -72,15 +93,24 @@ def main() -> None:
 
         shutil.rmtree(lock_dir, ignore_errors=True)
 
-    symlinks = [f for f in _HF_CACHE_DIR.rglob("*") if f.is_symlink()]
-    if symlinks:
-        print(
-            f"\n警告: symlinkが{len(symlinks)}件残っています"
-            "（zip提出時にvalidate_submission.pyのzip.slip_symlinkチェックで"
-            "弾かれる）。HF_HUB_DISABLE_SYMLINKS=1が効いているか確認すること。"
-        )
-        for s in symlinks[:5]:
-            print(f"  {s}")
+    n_replaced = _materialize_symlinks(_HF_CACHE_DIR)
+    if n_replaced:
+        print(f"\nsymlink {n_replaced}件を実ファイルに置き換えました。")
+    remaining = [f for f in _HF_CACHE_DIR.rglob("*") if f.is_symlink()]
+    if remaining:
+        print(f"警告: まだsymlinkが{len(remaining)}件残っています: {remaining[:5]}")
+
+    # snapshots/ 側に実ファイルとしてコピーしたので、重複元の blobs/ はもう不要
+    # （唯一の理由だった重複排除は1リビジョンしか無いここでは意味が無い）。
+    import shutil
+
+    for blobs_dir in _HF_CACHE_DIR.rglob("blobs"):
+        shutil.rmtree(blobs_dir, ignore_errors=True)
+
+    # xet転送バックエンドが作るログ・ステージング領域も提出物には不要。
+    xet_dir = _HF_CACHE_DIR / "xet"
+    if xet_dir.is_dir():
+        shutil.rmtree(xet_dir, ignore_errors=True)
 
     total_bytes = sum(f.stat().st_size for f in _HF_CACHE_DIR.rglob("*") if f.is_file())
     print(f"\nキャッシュ先: {_HF_CACHE_DIR}")

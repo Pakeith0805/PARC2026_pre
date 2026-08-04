@@ -491,5 +491,117 @@ EGLが`/dev/dri`の権限不足で使えず、フォールバック）。生成�
   ステップは`examples/`のLoRA学習ノートブックで実際にTrack1向けデータを
   学習させ、この試走をベースラインとして比較すること。
 
+## 採点環境の正確な仕様が判明（2026-08-04、`README (1).md`より）
+
+配布環境READMEの更新版（`README (1).md`）に、以前は書かれていなかった
+「採点環境」節が追加されていた。これまで`competition_analysis.md`/`my_strategy.md`
+に書いていたハードウェア・ソフトウェア構成の記述はこの情報が無い時点の推測を
+含んでいたため、正確な一次情報として記録する。
+
+- ベースイメージ: `nvidia/cuda:13.0.3-cudnn-devel-ubuntu22.04`（Ubuntu 22.04.5）
+- **Python: 3.10.12（システムPython、`/usr/bin/python3.10`）**
+- CUDA Toolkit 13.0（`nvcc`によるソースビルド可）、cuDNN 9.14.0、NCCL 2.28.3、
+  ドライバR580系
+- **PyTorch: 2.11.0+cu130（プリインストール済み）**
+- レンダリング: `MUJOCO_GL=EGL`（GPUレンダリング。このサンドボックス開発機とは
+  異なり、本番はEGLが正常に使える）
+- 評価パイプライン側の主要依存はローカルの`venv/`と同一版で固定
+  （`numpy==1.26.4`, `mujoco==3.7.0`, `robosuite==1.4.0`, `gym==0.25.2`,
+  `bddl==3.6.0`, `fastapi==0.140.7`, `uvicorn==0.51.0`, `msgpack==1.2.1`,
+  `huggingface_hub==1.25.1`等）
+- **提出物の依存インストール方式**: 提出物専用の**`--system-site-packages`
+  付きvenv**に対して`pip install -r requirements.txt`する。
+  - `requirements.txt`に書かなかったライブラリは、採点イメージにプリ
+    インストールされている版がそのまま使われる（`torch`を書かなければ
+    `2.11.0+cu130`がそのままCUDA13と整合した状態で使われる）。
+  - 書いた版はvenv側が優先され、提出物のサーバーにのみ効く
+    （評価パイプライン側には影響しない）。
+- **CUDA12系torchを使う場合の注意**: 採点イメージには`libnvJitLink.so.13`しか
+  無く`.so.12`の代替にはならない。CUDA12ビルドのtorchを使うなら、それが必要と
+  する`nvidia-*-cu12`一式がvenv側にそろっている必要がある（特に
+  `nvidia-nvjitlink-cu12`が無いと`ImportError: libnvJitLink.so.12: cannot
+  open shared object file`で起動失敗する）。`pip install`時に
+  「`X requires Y, but you have Z`」という依存衝突警告を残さないことが重要。
+- 採点イメージには**競合ベースライン実装（pi0.5 / openpi、JAXベース）の依存
+  一式も同時に焼き込まれている**（`jax[cuda12]==0.5.3`, `jaxlib==0.5.3`,
+  `flax==0.10.2`, `orbax-checkpoint==0.11.13`, `transformers==4.53.2`等）。
+  自分のモデルに必要な依存は「イメージに入っているはず」と仮定せず、
+  `requirements.txt`に明示すること（イメージはアップデートされうる）。
+- 提出前の確認方法として、`--system-site-packages`込みの本番相当venvを
+  作った上で`python -c "import torch; print(torch.__version__,
+  torch.cuda.is_available())"`を実行することが推奨されている。
+  Dockerで本番相当（GPU）を再現する場合は`Dockerfile`の`FROM`をこの
+  CUDA13イメージに、`setup.sh`のtorchを`torch==2.11.0`
+  （`--index-url https://download.pytorch.org/whl/cu130`）に差し替えて
+  `docker run --gpus all`で起動する。
+
+## lerobotのPython版要求と、実際に採点で失敗した件（2026-08-04）
+
+`policy_server.py`のSmolVLA実装（`lerobot[smolvla]==0.6.0`指定）を実際に
+採点環境へ提出したところ、依存インストールの段階で失敗し0点になった。
+
+```
+ERROR: Could not find a version that satisfies the requirement lerobot==0.6.0
+  (from versions: 0.1.0, 0.3.2, 0.3.3, 0.4.0, 0.4.1, 0.4.2, 0.4.3, 0.4.4)
+```
+
+- **原因**: PyPIの`lerobot`は`0.5.0`以降すべて`requires-python>=3.12`だが、
+  採点環境は上記の通りPython 3.10.12。examples/のColabノートブックは
+  Python 3.12前提（Colabで`sys.version_info < (3,12)`をチェックしている）
+  だったため、この版のズレに気づいていなかった。ローカルの動作確認も
+  Python 3.12の専用venv（`.local_libs/verify/venv_smolvla/`）で行っており、
+  同じ理由で気づけなかった。
+- **対応（`my_strategy.md`方針5参照）**: Python 3.10で入る最新版
+  `lerobot[smolvla]==0.4.4`に切り替え、Python 3.10の別venv
+  （`.local_libs/verify/venv_py310_check/`）で実際に`lerobot/
+  smolvla_libero_plus`チェックポイントのロード・推論・`validate_submission.py`
+  の静的/動的チェックまで通ることを確認した。
+- **0.4.4と0.6.0のAPI差分（要調整）**: `from lerobot.configs import
+  PreTrainedConfig`は0.6.0のみ（`lerobot/configs/__init__.py`が
+  `from .policies import PreTrainedConfig`で再エクスポートしている）。0.4.4には
+  この再エクスポートが無く、`from lerobot.configs.policies import
+  PreTrainedConfig`という完全パスでの参照が必要。`make_pre_post_processors`
+  （`lerobot.policies.factory`）・`SmolVLAPolicy`
+  （`lerobot.policies.smolvla.modeling_smolvla`）・
+  `prepare_observation_for_inference`（`lerobot.policies.utils`）は
+  両バージョンで同じ場所にあった。
+- **0.4.4のtorch要求**: `pyproject.toml`で`torch>=2.2.1,<2.11.0`。採点環境の
+  プリインストールは`torch==2.11.0+cu130`（`<2.11.0`を満たさない）なので、
+  `lerobot[smolvla]==0.4.4`を`requirements.txt`に入れると、pipが自動的に
+  条件を満たすtorch（CUDA12系、手元の検証では`torch==2.10.0+cu128`が選ばれた）
+  を提出物用venvにインストールする。これはREADMEの「CUDA12系torchを使う場合の
+  注意」に記載の想定内の挙動。
+- **教訓**: 学習用ノートブック（Colab、Python 3.12）と推論コード
+  （`policy_server.py`、採点環境はPython 3.10）で前提とするPython版が違う
+  ことに、事前のローカル検証だけでは気づけなかった。今後は必ずPython 3.10の
+  venvで最終確認してから提出する（`my_strategy.md`方針5の「含意」参照）。
+
+## requirements.txtの追加検証（2026-08-04、`--system-site-packages`を模擬）
+
+前節の検証は空のvenvにいきなり`lerobot[smolvla]==0.4.4`を入れる形だった。
+`README.md`の「requirements.txtの書き方」が想定する実際の状況——**採点環境の
+プリインストール一式（`torch==2.11.0+cu130`, `numpy==1.26.4`等）が最初から
+入っている状態に、それをpipで上書きする**——をより忠実に再現して再検証した
+（`.local_libs/verify/venv_faithful/`）。
+
+- 空のPython 3.10 venvに、README付録のプリインストール一覧のうち主要な版
+  （`torch==2.11.0+cu130`, `numpy==1.26.4`, `huggingface_hub==1.25.1`,
+  `fastapi==0.140.7`等）を先に`pip install`し、その後で`submission_template/
+  requirements.txt`を（`uv pip`ではなく**素の`pip install -r`**、pip版も
+  実環境と同じ`26.1.2`で）インストール。
+- 結果: **「`X requires Y, but you have Z`」という衝突警告は一切出ず**、
+  `torch`は`2.10.0+cu128`に、`numpy`は`2.2.6`に、`huggingface_hub`は`0.35.3`に
+  それぞれクリーンに巻き戻った。`nvidia-nvjitlink-cu12`（README指摘の必須
+  パッケージ）も正しく入り、`torch.cuda.is_available()`は`True`、実際の
+  CUDA行列積も成功した。
+- この環境で`policy_server.py`のロード・推論・`validate_submission.py`の
+  動的チェック（zip展開込み）まで実行し、全てPASSを確認した。
+- **副産物の発見**: このテストの過程で、シェルのデフォルト起動時に
+  `.local_libs/parc_lora/venv`という別のvenvが自動的に有効化されることに
+  気づいた（`~/parc_lora_workspace/lerobot`・`~/parc_lora_workspace/
+  LIBERO-plus`をeditableインストール済み）。おそらく別セッション/別作業で
+  LoRA学習の準備が進行中と思われる。今回の検証はこの環境には一切触れて
+  いない（`python3 -m pip`で明示的に対象venvを指定して実行した）。
+
 ---
-最終更新: 2026-08-02
+最終更新: 2026-08-04
