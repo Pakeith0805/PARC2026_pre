@@ -109,6 +109,11 @@ class MyPolicy(BasePolicy): # BasePolicyを継承
         if str(self.VENDOR_DIR) not in sys.path:
             sys.path.insert(0, str(self.VENDOR_DIR))
 
+        # src/download_model_weights.py がキャッシュを作り直すときだけ立てる。
+        # キャッシュが中途半端に残っている状態で下のオフライン化が走ると、
+        # 再ダウンロードできなくなるため。
+        force_online = os.environ.get("SMOLVLA_FORCE_ONLINE") == "1"
+
         if self.HF_CACHE_DIR.is_dir():
             # setdefault ではなく上書きする。採点環境は HF_HOME / HF_HUB_CACHE を
             # 独自の値で設定済みで、setdefault だと同梱キャッシュが無視され、
@@ -116,8 +121,9 @@ class MyPolicy(BasePolicy): # BasePolicyを継承
             # HF_HUB_CACHE は HF_HOME より優先されるので両方明示する。
             os.environ["HF_HOME"] = str(self.HF_CACHE_DIR)
             os.environ["HF_HUB_CACHE"] = str(self.HF_HUB_CACHE_DIR)
-            os.environ["HF_HUB_OFFLINE"] = "1"
-            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            if not force_online:
+                os.environ["HF_HUB_OFFLINE"] = "1"
+                os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
         import torch
         from huggingface_hub import snapshot_download
@@ -139,7 +145,7 @@ class MyPolicy(BasePolicy): # BasePolicyを継承
         )
         if os.path.isdir(self.MODEL_PATH):
             model_dir = self.MODEL_PATH
-        elif bundled_snapshot.is_dir():
+        elif bundled_snapshot.is_dir() and not force_online:
             model_dir = str(bundled_snapshot)
         else:
             model_dir = snapshot_download(

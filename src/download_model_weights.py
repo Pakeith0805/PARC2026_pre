@@ -32,6 +32,10 @@ _HF_CACHE_DIR = _REPO_ROOT / "submission_template" / "model_weights" / "hf_cache
 # 同梱予定のキャッシュ先に向ける。
 os.environ["HF_HOME"] = str(_HF_CACHE_DIR)
 os.environ.pop("HF_HUB_OFFLINE", None)
+# MyPolicy は hf_cache/ が既にあると HF_HUB_OFFLINE=1 を立て、同梱スナップショットを
+# 直接読む（採点環境で確実にオフライン起動するため）。作り直すときはそれでは
+# ダウンロードできないので、明示的に無効化する。
+os.environ["SMOLVLA_FORCE_ONLINE"] = "1"
 # 既定のHFキャッシュは blobs/ の実体を snapshots/ からsymlinkで参照する構造だが、
 # validate_submission.py の zip.slip_symlink チェックがsymlinkエントリを
 # 一律拒否するため、提出zipに含められない。HF_HUB_DISABLE_SYMLINKS という

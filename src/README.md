@@ -57,6 +57,18 @@ zip -rq -X ../submissions/submission.zip \
 失敗して起動しない。提出したら[submission_log.md](../submission_log.md)に
 1行追加すること。
 
+### 既存キャッシュの上に作り直す場合
+
+`MyPolicy`は`hf_cache/`が既にあると`HF_HUB_OFFLINE=1`を立てて同梱スナップショットを
+直接読む（採点環境で確実にオフライン起動するため）。そのままでは再ダウンロードが
+できないので、`download_model_weights.py`は`SMOLVLA_FORCE_ONLINE=1`を立てて
+このオフライン化を明示的に無効化している。両経路が壊れていないことは2026-08-06に
+実機確認済み:
+
+- `SMOLVLA_FORCE_ONLINE=1` → `snapshot_download`を経由し、`HF_HUB_OFFLINE`は立たない
+- 未設定 + `HF_HOME`/`HF_HUB_CACHE`を偽のパスに偽装 + `HF_HUB_OFFLINE=1`（＝本番と
+  同じ敵対的条件）→ 同梱スナップショットから直接ロードして推論まで成功
+
 ## record_rollout.py
 
 ポリシーサーバー（`submission_template/policy_server.py`と同じ
