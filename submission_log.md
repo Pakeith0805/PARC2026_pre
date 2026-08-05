@@ -14,7 +14,7 @@ zipの再構築手順は[submission_template/README.md](submission_template/READ
 | 2 | 2026-08-04 | （保存なし） | — | lerobot 0.4.4に固定 | **失敗**: `evdev`のビルドエラー、`Python.h`が無い（方針6） |
 | 3 | 2026-08-05 | `submission_smolvla_base_2026-08-04.zip` | `f5a1034` | lerobotをvendor同梱、モデル重みをzip同梱 | **失敗**: サーバー起動失敗、`LocalEntryNotFoundError`（方針7） |
 | 4 | 2026-08-06 | `submission_smolvla_base_2026-08-06.zip` | （#3 + 方針7の修正、未コミットで作成） | HFキャッシュの環境変数を上書き代入＋スナップショット直参照 | **完走**: 起動36秒。ただし `public_score 0.000`。8エピソード全てが300ステップ消化＝ゴール未到達（方針8） |
-| 5 | 2026-08-06 | `submission_smolvla_nstep10_2026-08-06.zip` | `<COMMIT_5>` | `n_action_steps` 50→10 | **初の非ゼロ**: `public_score 0.12839`。ローカルのT1 exampleでは70.0%だった |
+| 5 | 2026-08-06 | `submission_smolvla_nstep10_2026-08-06.zip` | `0897024` | `n_action_steps` 50→10 | **初の非ゼロ**: `public_score 0.12839`。ローカルのT1 exampleでは70.0%だった |
 
 ### #5 のローカル70% vs 本番12.8% のギャップについて
 
