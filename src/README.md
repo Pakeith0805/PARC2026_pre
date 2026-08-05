@@ -48,8 +48,14 @@ symlinkで参照する構造だが、`validate_submission.py`の`zip.slip_symlin
 
 ```bash
 cd submission_template
-zip -rq -X ../submissions/submission.zip policy_server.py requirements.txt model_weights/
+zip -rq -X ../submissions/submission.zip \
+    policy_server.py requirements.txt model_weights vendor \
+    -x "*__pycache__*" "*.pyc"
 ```
+
+`vendor/`（lerobot本体のソース）を忘れると、採点環境で`import lerobot`が
+失敗して起動しない。提出したら[submission_log.md](../submission_log.md)に
+1行追加すること。
 
 ## record_rollout.py
 
@@ -76,7 +82,18 @@ requirements.txt`は Python 3.10 で入る最新版 `lerobot[smolvla]==0.4.4` �
 指定している。3.12のvenvで検証すると、この非互換に気づかないまま提出して
 しまうので注意——実際に一度これで採点が失敗した）。
 
-1. **ポリシーサーバー用の別venv**でモデルを動かす（GPU推奨）。例:
+1. **ポリシーサーバー用の別venv**でモデルを動かす（GPU推奨）。
+
+   このリポジトリでは`.local_libs/verify/venv_final_check/`（Python 3.10、
+   `torch 2.10.0+cu128`）を使っている。2026-08-06時点でRTX 5090を認識し、
+   モデルロード10.5秒・1推論0.31秒で動くことを確認済み。
+
+   ```bash
+   .local_libs/verify/venv_final_check/bin/python \
+       submission_template/policy_server.py --port 8000
+   ```
+
+   新しく作り直す場合:
 
    ```bash
    uv venv --python 3.10 .venv_policy
@@ -106,6 +123,11 @@ requirements.txt`は Python 3.10 で入る最新版 `lerobot[smolvla]==0.4.4` �
 
    python src/record_rollout.py --server-url http://localhost:8000
    ```
+
+> **1つのポリシーサーバーに評価クライアントを同時に2つ以上つながないこと。**
+> サーバー側のポリシーは単一インスタンスで、action chunkのキューと`/reset`が
+> 混線し、成功率が実際より大幅に低く出る（実際に70%のところを15%/20%と
+> 誤測定した。`competition_analysis.md`の「0点の真因」節参照）。
 
 ### 主な引数
 
@@ -145,3 +167,34 @@ requirements.txt`は Python 3.10 で入る最新版 `lerobot[smolvla]==0.4.4` �
 - 動画コーデックは`imageio`+`libx264`（H.264）。OpenCVの`cv2.VideoWriter`の
   既定コーデック`mp4v`（MPEG-4 Part 2）はブラウザの`<video>`タグで再生できない
   ため意図的に避けている。
+
+## eval_vanilla_libero.py
+
+**摂動なしの素のLIBERO**（`LIBERO/`）で同じ評価を回す。`record_rollout.py`は
+`env.sh`が指す`LIBERO-plus/`（摂動入り）を見るため、成功率が低いときに
+「モデル自体が壊れているのか、摂動に弱いだけなのか」を切り分けられない。
+このスクリプトは`LIBERO_ROOT`を素の`LIBERO/`に差し替えたうえで
+`record_rollout.py`をそのまま起動する（引数は同じものが全部通る）。
+
+```bash
+source env.sh
+venv/bin/python src/eval_vanilla_libero.py \
+    --server-url http://localhost:8000 \
+    --benchmark libero_object --episodes 1 --max-steps 300 --camera-size 128
+```
+
+素のLIBEROは`init_states`を`torch.load`で読むが、torch>=2.6の
+`weights_only=True`既定に未対応で`UnpicklingError`になるため、このスクリプトが
+ローカル検証用に既定を戻している（提出物には影響しない）。
+
+**この切り分けが実際に効いた例**: `n_action_steps=50`のまま提出して0点だった
+とき、素のLIBERO（libero_object 10タスク、128px）で
+
+| 条件 | 成功率 |
+|---|---|
+| 128px / n=50 | 10% |
+| 256px / n=50 | 30% |
+| 128px / n=10 | **90%** |
+
+という差が出て、原因が重みでも前処理でもなく開ループ長だと特定できた
+（`my_strategy.md`方針8）。

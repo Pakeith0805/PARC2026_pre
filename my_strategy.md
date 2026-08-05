@@ -199,7 +199,7 @@ requirement lerobot==0.6.0`）。原因は採点環境がPython 3.10.12で、
   挙動としてREADME.mdに書かれている。
 - **一次情報の出どころ**: 採点環境の正確な構成（Python版・torch版・
   `--system-site-packages`・プリインストール一覧）は、ユーザーが実際の採点
-  ログと、配布環境の更新版README（`README (1).md`、採点環境節が追記された版）
+  ログと、配布環境の更新版README（採点環境節が追記された版。現在は`README.md`本体に取り込み済み）
   を共有してくれたことで判明した。以前の`overview.md`/`competition_analysis.md`
   の記述はこの情報が無い時点のものだったため、あわせて更新した。
 - **含意**: 今後`examples/`のColabノートブックでLoRA学習する際も、学習は
@@ -208,5 +208,102 @@ requirement lerobot==0.6.0`）。原因は採点環境がPython 3.10.12で、
   で動作確認してから提出すること**。ローカル検証を3.12環境だけで済ませると
   この非互換に気づけない。
 
+## 方針6: lerobotをpipインストールせず、ソースをvendor同梱する（2026-08-04決定）
+
+方針5でlerobotをPython 3.10対応の0.4.4に切り替えて再提出したところ、今度は
+別のエラーで0点になった（`evdev`のビルド失敗、`fatal error: Python.h: No
+such file or directory`）。実機検証をやり直し、「そうしよう」で対応を決定。
+
+- **原因**: lerobotが`pynput>=1.7.7,<1.9.0`を（smolvla extraとは無関係に）
+  無条件の必須依存として宣言している。`pynput`はLinuxで`evdev`を要求するが、
+  `evdev`はPyPIに一度もwheelを公開したことがなく常にソースビルドが必要。
+  採点環境にはPythonヘッダー（`Python.h`）が無く、ビルドが失敗する。
+  0.3.x〜0.4.4のどのバージョンでも同じ依存宣言があり、バージョンを変えても
+  回避できないことを確認した。
+- **pynput/evdevは実際には一切使われていない**: `pynput`はゲームパッド等の
+  入力デバイス制御用（lerobotの実機テレオペ機能向け）で、SmolVLAの推論に
+  使う`lerobot.configs.policies` / `lerobot.policies.factory` /
+  `lerobot.policies.smolvla.*`のimportチェーンには一度も出てこないことを、
+  実際にpynput/evdevを削除した状態で動作確認して確かめた。
+- **requirements.txt経由の回避策はすべて塞がれている**: ローカルの`.whl`を
+  同梱して相対パスで参照する、`file://`で参照する、`--find-links`で
+  ローカルディレクトリを指す、いずれも`validate_submission.py`の静的検査
+  （`req.local_path`・`req.external_url`）で明示的に拒否される
+  （「setup.pyがinstall時に実行される」ためのセキュリティ対策）。
+- **対応**: `lerobot`パッケージ自体をpipインストールするのをやめ、ソース一式
+  （v0.4.4のPyPI版と実質同一。非Pythonファイルの差分のみ実機で確認済み）を
+  `submission_template/vendor/lerobot/`に同梱し、`policy_server.py`の
+  `MyPolicy.__init__`が`sys.path`に追加してから`import`する方式にした。
+  これで`pynput`はそもそも要求されなくなる。
+- **vendorしたことで必要になった実際の依存**: `lerobot.policies`パッケージの
+  `__init__.py`が全ポリシー種別（groot, pi0等）を無条件にimportする作りに
+  なっており、`groot`経由で`lerobot.robots`/`lerobot.motors`
+  （`pyserial`要求）まで芋づる式に読み込まれることが分かった。ただし
+  `pyserial`・`deepdiff`・`av`・`gymnasium`・`datasets`・`diffusers`・
+  `draccus`等はいずれも通常にwheelがありビルド不要だったため、これらは
+  素直に`requirements.txt`に追加する方針にした（lerobotの内部構造を
+  patchするより安全）。1つずつ実機（Python 3.10のクリーンなvenv）で
+  importエラーを解消しては次のエラーを見る、という手順で必要な依存を
+  確定させた。最終的な一覧は`requirements.txt`のコメント参照。
+- **検証**: 採点環境のプリインストール状態を模した`--system-site-packages`
+  相当のvenvで、素の`pip install -r requirements.txt`（pip 26.1.2）が
+  警告なしで完了し、`evdev`/`pynput`が一切インストールされないこと、
+  `MyPolicy`のロード・推論、`validate_submission.py`の静的・動的チェック
+  （zip展開込み）が全てPASSすることを確認した。
+- **含意**: LoRA学習後にモデル重みを差し替える際も、`vendor/lerobot/`は
+  そのまま（コード側の変更ではないため）でよい。lerobotのバージョンを
+  変える場合は`vendor/lerobot/`の中身と`requirements.txt`の両方を
+  合わせて更新する必要がある。
+
+## 方針7: HFキャッシュの場所を環境変数の`setdefault`でなく上書き＋直接指定で決める（2026-08-06決定）
+
+方針6のvendor化で3回目の提出をしたところ、今度はポリシーサーバーの起動自体が
+失敗して0点になった（`LocalEntryNotFoundError`、`submission_smolvla_base_
+2026-08-04.zip`）。原因を特定して対処することにした。
+
+- **原因**: `policy_server.py`が`os.environ.setdefault("HF_HOME", ...)`で
+  同梱キャッシュを指していた。採点環境は参加者サーバーを`nobody`ユーザーの
+  サンドボックスで起動する都合上、`HF_HOME`を**あらかじめ独自の値で設定して
+  いる**。`setdefault`は既存値があると何もしないため同梱キャッシュが無視され、
+  `HF_HUB_OFFLINE=1`と相まって即死した。提出zipにキャッシュ425ファイルは
+  正しく入っていたので、「入れ忘れ」ではなく「見に行っていない」問題だった。
+- **対応**:
+  1. `setdefault`をやめて上書き代入にする。`HF_HUB_CACHE`は`HF_HOME`より
+     優先されるため、両方を明示的に設定する（`TRANSFORMERS_OFFLINE`も）。
+  2. さらに保険として、`snapshot_download()`を経由せず同梱スナップショットの
+     パス（`hf_cache/hub/models--<repo>/snapshots/<revision>`）を直接指す分岐を
+     追加する。これでHFの環境変数解決に一切依存しなくなる。
+- **検証**: `HF_HOME`/`HF_HUB_CACHE`を偽のパスに、`HF_HUB_OFFLINE=1`にした
+  状態（＝本番と同じ敵対的条件）で、提出zipを展開したものから直接ロード・
+  推論できることを確認した。ロード10.5秒、1推論0.31秒。
+- **結果**: この修正で**初めて採点が完走した**
+  （`submission_smolvla_base_2026-08-06.zip`、起動36秒）。ただしスコアは0点で、
+  それは別の原因だった（方針8）。
+- **含意**: 採点環境が設定済みの環境変数を「尊重」してはいけない。同梱リソースを
+  確実に使わせたい箇所は、環境変数ではなくパスで直接指定する。
+
+## 方針8: `n_action_steps`を50から10に下げる（2026-08-06決定）
+
+方針7で採点は完走したが0点だった。サーバーログを解析すると8エピソード
+すべてがぴったり300ステップ（`max_steps`）で終わっており、`done`が一度も
+立っていない＝ゴールに一度も到達していないと分かった。実装バグを5点検証して
+すべてシロだったため、推論時パラメータを疑って切り分けることにした。
+
+- **原因**: checkpointの`n_action_steps`が**50**。20Hz換算で2.5秒間、観測を
+  一切見ずにアクションチャンクを流し切る設定で、学習時256×256に対し採点環境は
+  128×128であるため、解像度低下で生じた誤差が開ループ中に増幅して破綻していた。
+- **測定**（素のlibero_object 10タスク、128px、300ステップ上限）:
+  n=50で10%、n=10で**90%**。256px/n=50でも30%しか出ず、
+  **低解像度そのものより「低解像度 × 長い開ループ」の組み合わせ**が効いていた。
+- **本番相当のT1 exampleタスク**（4タスク×5エピソード、128px）: 0.0% → **70.0%**。
+- **n=10を採用した理由**: n=5も試したが66.7%で頭打ちで、推論回数だけ倍になる。
+  n=10ならレイテンシは`/act`最大0.111秒（10秒制限に対し90倍の余裕）で済む。
+- **実装**: `SMOLVLA_N_ACTION_STEPS`環境変数で上書き可能にし、既定値を10とした
+  （0を指定するとcheckpointの値をそのまま使う）。
+- **含意**: 重みを疑う前に「摂動なしの素のLIBEROで動くか」を切り分けると原因の
+  所在が一発で分かる。この切り分けは`src/eval_vanilla_libero.py`で常時再現できる
+  ようにした。LoRA学習後もこのnの値は再評価すること（学習時の解像度を採点環境と
+  揃えれば、より大きなnでも成立する可能性がある）。
+
 ---
-最終更新: 2026-08-04
+最終更新: 2026-08-06

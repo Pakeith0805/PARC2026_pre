@@ -9,14 +9,38 @@ numpy>=1.19
 # torch>=2.0
 # transformers>=4.30
 
-# SmolVLA。examples/ のノートブックはColab(Python 3.12)向けにlerobot==0.6.0を
-# 使っているが、採点環境はPython 3.10.12で、lerobot>=0.5.0はrequires-python>=3.12
-# のためpip installできない。Python 3.10でインストール可能な最新版0.4.4を使う
-# （config.json等のチェックポイント形式に0.6.0との互換性があることを実機確認済み）。
-# torch・huggingface_hub は明示的に書かない: 採点環境の提出物用venvは
-# --system-site-packages で作られ、書かなければプリインストール版
-# （torch==2.11.0+cu130 等）がそのまま使われる。lerobot 0.4.4 は
-# torch<2.11.0 を要求するため、この行を足すとpipがCUDA12系torchへ
-# 巻き戻すが、これはREADME.mdに記載の想定内の挙動（nvidia-*-cu12一式が
-# 一緒に入る限り動作する）。
-lerobot[smolvla]==0.4.4
+# SmolVLA。
+#
+# lerobotパッケージ自体はpipインストールしない（vendor/lerobot/ にソースを
+# 同梱し、policy_server.py が sys.path に追加して使う）。理由:
+# lerobotは "pynput>=1.7.7,<1.9.0" を無条件の必須依存として宣言しており、
+# pynputはLinuxで "evdev" を要求する。evdevはPyPIにwheelが存在せず常に
+# ソースビルドが必要だが、採点環境にはPythonヘッダー（Python.h）が無く
+# ビルドに失敗する（実際に提出して確認した）。pynput/evdevはゲームパッド等の
+# 入力デバイス制御用で、SmolVLAの推論コードパスでは一切使われない
+# （importチェーンを実機で確認済み）ため、lerobot本体だけvendorして
+# この依存を丸ごと回避する。詳細はmy_strategy.md方針6・
+# competition_analysis.mdの該当節を参照。
+#
+# 以下はvendorしたlerobotソースが実際に必要とする依存を、実機で1つずつ
+# 特定して確定した版（.local_libs/verify/venv_vendor_test/で検証）。
+# torch・numpy・huggingface_hub 等は明示的に書かない: 採点環境の提出物用
+# venvは --system-site-packages で作られ、書かなければプリインストール版
+# がそのまま使われる（README.mdの「採点環境」節参照）。ただし torchvision の
+# 要求（torch<2.11.0）により、torch自体は指定しなくてもCUDA12系へ自動的に
+# 巻き戻る（README.mdの「CUDA12系torchを使う場合の注意」に沿った想定内の
+# 挙動、nvidia-*-cu12一式込みで動作確認済み）。
+torchvision==0.25.0
+transformers==4.57.6
+accelerate==1.14.0
+safetensors==0.8.0
+num2words==0.5.14
+opencv-python-headless==4.11.0.86
+draccus==0.10.0
+datasets==4.8.5
+diffusers==0.35.2
+deepdiff==8.6.2
+av==15.1.0
+gymnasium==1.3.0
+pyserial==3.5
+imageio[ffmpeg]==2.37.4

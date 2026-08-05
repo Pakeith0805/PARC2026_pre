@@ -6,18 +6,32 @@
 submission.zip
 ├── policy_server.py     # ← MyPolicy クラスを編集する（必須）
 ├── requirements.txt     # ← 追加依存があれば記載（必須）
-└── model_weights/       # ← チェックポイント等を配置（任意）
+├── model_weights/       # ← チェックポイント等を配置（任意）
+└── vendor/               # ← pipでは入れられない/入れたくない依存のソースを同梱（任意）
 ```
+
+`vendor/`は、依存パッケージをpipでインストールする代わりにソースをそのまま
+同梱し、`policy_server.py`側で`sys.path`に追加して使うためのディレクトリ。
+このテンプレートでは`vendor/lerobot`にlerobot本体のソースを同梱している
+（理由: lerobotが無条件依存とする`pynput`がLinuxで`evdev`を要求するが、
+`evdev`はPyPIにwheelが無く常にソースビルドが必要で、採点環境には
+Pythonヘッダーが無くビルドに失敗するため。詳細は`policy_server.py`の
+コメント、リポジトリ直下の`my_strategy.md`方針6を参照）。
 
 ## 手順
 
 1. `policy_server.py` の `MyPolicy` クラスにモデルのロードと推論を実装する
 2. モデル重みを `model_weights/` に配置する
 3. 追加ライブラリがあれば `requirements.txt` に追記する
-4. zip にまとめて提出する:
+4. zip にまとめて提出する（`submission_template/`で実行する）:
    ```bash
-   zip -r submission.zip policy_server.py requirements.txt model_weights/
+   zip -rq -X ../submissions/submission.zip \
+       policy_server.py requirements.txt model_weights vendor \
+       -x "*__pycache__*" "*.pyc"
    ```
+5. **コミットしてからzipを作り**、提出したらリポジトリ直下の
+   [submission_log.md](../submission_log.md) に1行追加する（どのzipがどの
+   コミットから作られて何点だったかは、そこにしか記録が残らない）。
 
 ## ローカルテスト
 

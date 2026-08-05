@@ -491,9 +491,9 @@ EGLが`/dev/dri`の権限不足で使えず、フォールバック）。生成�
   ステップは`examples/`のLoRA学習ノートブックで実際にTrack1向けデータを
   学習させ、この試走をベースラインとして比較すること。
 
-## 採点環境の正確な仕様が判明（2026-08-04、`README (1).md`より）
+## 採点環境の正確な仕様が判明（2026-08-04、主催者配布のREADME.md更新版より）
 
-配布環境READMEの更新版（`README (1).md`）に、以前は書かれていなかった
+配布環境READMEの更新版（現在は`README.md`本体に取り込み済み）に、以前は書かれていなかった
 「採点環境」節が追加されていた。これまで`competition_analysis.md`/`my_strategy.md`
 に書いていたハードウェア・ソフトウェア構成の記述はこの情報が無い時点の推測を
 含んでいたため、正確な一次情報として記録する。
@@ -603,5 +603,144 @@ ERROR: Could not find a version that satisfies the requirement lerobot==0.6.0
   LoRA学習の準備が進行中と思われる。今回の検証はこの環境には一切触れて
   いない（`python3 -m pip`で明示的に対象venvを指定して実行した）。
 
+## 2回目の提出失敗: evdevのビルドエラー、そしてlerobotのvendor化（2026-08-04）
+
+lerobotをPython 3.10対応の0.4.4に切り替えて再提出したところ、依存インストール
+段階で別のエラーが出て0点になった。
+
+```
+error: subprocess-exited-with-error
+× Building wheel for evdev (pyproject.toml) did not run successfully.
+...
+src/evdev/input.c:10:10: fatal error: Python.h: No such file or directory
+```
+
+- **原因の特定**: `evdev`はLinux入力デバイス（キーボード・ゲームパッド等）を
+  扱うライブラリで、C拡張（`_input`）のビルドにPythonヘッダー（`Python.h`）を
+  要求する。PyPIの`evdev`はバージョン問わず一度もwheelを公開しておらず、常に
+  ソースビルドが必要（`https://pypi.org/pypi/evdev/<version>/json`で全リリース
+  確認）。採点環境にはこのヘッダーが無いためビルドが失敗する。
+  `evdev`は`pynput`（`lerobot`が`pynput>=1.7.7,<1.9.0`をextrasと無関係に
+  無条件必須依存として宣言）が要求しており、`lerobot`のバージョンを
+  0.3.x〜0.4.4のどれに変えても同じ依存宣言があるため回避不可（PyPIの
+  各バージョンのメタデータを実際に確認した）。
+- **pynput/evdevが実際には不要なことの確認**: `SmolVLAPolicy`のロード・推論に
+  実際に使うimportチェーン（`lerobot.configs.policies` →
+  `lerobot.policies.factory` → `lerobot.policies.smolvla.*`等）を、
+  pynput/evdevを削除した状態で実行しても正常に動作することを確認した
+  （`pynput`はlerobotの実機テレオペ機能向けで、推論には無関係）。
+- **requirements.txt側での回避を試みたが、全て`validate_submission.py`の
+  静的検査で拒否されることを確認した**:
+  - ローカル`.whl`ファイルを相対/絶対パスで参照 → `req.local_path`エラー
+    （「setup.pyがinstall時に実行される」ため一律禁止）
+  - `evdev @ file:///path/to.whl`のdirect reference構文 → `req.external_url`
+    エラー（`parsed.url is not None`で検出）
+  - `-f`/`--find-links`でローカルディレクトリを指す → `BANNED_REQ_OPTIONS`に
+    含まれ一律禁止
+  - つまり「evdevの偽の/軽量な代替パッケージを作ってローカル参照する」という
+    アプローチはこの採点システムでは構造的に塞がれている。
+- **最終対応（`my_strategy.md`方針6参照）**: `lerobot`パッケージ自体をpipで
+  インストールするのをやめ、ソース一式を`submission_template/vendor/lerobot/`
+  に同梱し、`policy_server.py`が起動時に`sys.path`へ追加する方式にした。
+  vendorしたソースが実際に必要とする依存（`lerobot.policies.__init__`が
+  全ポリシー種別を無条件importする作りのため、`groot`経由で`robots`/`motors`/
+  `pyserial`まで芋づる式に読み込まれる等）を、Python 3.10のクリーンな環境で
+  1つずつ実行時エラーを解消しながら特定し、`requirements.txt`に明示した
+  （`torchvision`, `transformers`, `accelerate`, `safetensors`, `num2words`,
+  `opencv-python-headless`, `draccus`, `datasets`, `diffusers`, `deepdiff`,
+  `av`, `gymnasium`, `pyserial`, `imageio[ffmpeg]`）。幸い、これらは全て
+  PyPIにwheelがあり、evdevのようなビルド問題は再発しなかった。
+- **検証**: 採点環境のプリインストール状態を模した環境で、素の
+  `pip install -r requirements.txt`が警告・エラーなしで完了し、`evdev`/
+  `pynput`が一切インストールされないこと、モデルのロード・推論、
+  `validate_submission.py`の静的・動的チェック（zip展開込み）が全てPASS
+  することを確認した。
+- **教訓**: `requirements.txt`に書いたパッケージだけでなく、それが
+  無条件に引き込む「実機テレオペ用」等の無関係な依存まで含めて、実際に
+  クリーンな環境で`pip install`が通るかを検証する必要がある。ローカルの
+  開発環境（このサンドボックスにはPythonヘッダーが入っている）で
+  ビルドが通っても、採点環境で通るとは限らない。
+
+## 3回目の提出失敗: HF_HOMEの`setdefault`が採点環境で効かない（2026-08-06）
+
+vendor化した提出物（`submission_smolvla_base_2026-08-04.zip`）を提出したところ、
+ポリシーサーバーの起動自体に失敗して0点になった。
+
+```
+huggingface_hub.errors.LocalEntryNotFoundError: Cannot find an appropriate cached
+snapshot folder for the specified revision on the local disk and outgoing traffic
+has been disabled.
+```
+
+- **提出zipにキャッシュは正しく入っていた**: 展開して確認したところ、
+  `model_weights/hf_cache/hub/models--lerobot--smolvla_libero_plus/snapshots/
+  7bb70aa5.../model.safetensors`（907MB）を含む425ファイルが同梱されていた。
+  つまり「キャッシュが無い」のではなく「HuggingFaceがそのキャッシュを
+  見ていない」のが原因。
+- **真因**: `policy_server.py`が`os.environ.setdefault("HF_HOME", ...)`を
+  使っていた。採点環境は参加者サーバーを`nobody`ユーザーのサンドボックスで
+  起動する都合上、`HF_HOME`（および/または`HF_HUB_CACHE`）を**あらかじめ
+  独自の値で設定している**。`setdefault`は既存値があると何もしないため、
+  同梱キャッシュのパスは無視され、`HF_HUB_OFFLINE=1`と相まって即死した。
+- **再現**: ローカルで`HF_HOME=/tmp/bogus`を設定した状態で同じ`setdefault`
+  ロジックを実行し、本番と同一の`LocalEntryNotFoundError`を再現した。
+- **`HF_HUB_CACHE`は`HF_HOME`より優先される**ため、`HF_HOME`だけ上書きしても
+  採点環境が`HF_HUB_CACHE`を設定していた場合には効かない。両方を明示的に
+  代入する必要がある。
+- **対応（`my_strategy.md`方針7）**: 環境変数を上書き代入に変更し、さらに
+  保険として`snapshot_download()`を経由せず同梱スナップショットのパスを
+  直接指す分岐を追加した。これでHFの環境変数解決に一切依存しなくなる。
+- **教訓**: 実行環境が設定済みの環境変数を`setdefault`で「尊重」すると、
+  同梱リソースを使わせたい場面では真逆の結果になる。サンドボックス化された
+  採点環境では、自分の意図を環境変数に頼らず、可能ならパスで直接指定する。
+
+## 0点の真因: `n_action_steps`の既定値50（2026-08-06）
+
+方針7の修正で初めて採点が完走した（`submission_smolvla_base_2026-08-06.zip`）
+が、スコアは0.000だった。サーバーログを解析すると、**8エピソードすべてが
+ぴったり300ステップで終わっていた**。`pipeline/rollout.py`でエピソードが
+終わる条件は`done`（ゴール達成）か`max_steps`到達の2つだけなので
+（`episode_timeout_sec`はrollout内で未使用）、これは**ゴールに一度も
+到達していない**ことを意味する。1mm衝突判定以前の問題だった。
+
+- **実装バグは無かった**: checkpointとの整合性を5点検証し、すべてシロだった。
+  重み500キーが`strict=False`でも欠損0・余剰0で完全一致（`load_vlm_weights=
+  False`は無害）、`observation.state`の8次元がnormalizer統計の分布と一致
+  （`config.json`の`state shape:[6]`は古いメタデータで、実体の統計は8次元）、
+  画像キーは preprocessor の`rename_map`（`front→camera1`, `wrist→camera2`）に
+  合致、180度回転がlerobot本家の`LiberoProcessorStep`と一致、画像は
+  `prepare_observation_for_inference`で`/255`済み。観測画像を目視でも確認し、
+  生のrobosuite画像が上下逆で180度回転が正しい向きに直すことを確かめた。
+- **切り分け**: 摂動なしの素のLIBERO（`LIBERO/`）で走らせたところ、
+  10タスク中1タスクが108ステップで成功した。つまり配線は正しく、ポリシーは
+  タスクを完遂できる。ただし成功率が低すぎる。
+- **真因**: checkpointの`n_action_steps`が**50**だった。20Hz換算で
+  **2.5秒間、一切観測を見ずにアクションチャンクを流し切る**という設定で、
+  学習時256×256に対し採点環境は128×128であるため、この解像度低下で生じた
+  誤差が2.5秒の開ループ中に増幅して完全に破綻していた。
+- **測定**（素のlibero_object 10タスク、300ステップ上限、1エピソード）:
+
+  | 条件 | 成功率 |
+  |---|---|
+  | 128px / n=50（提出時の状態） | 10% |
+  | 256px / n=50 | 30% |
+  | 128px / n=10 | **90%** |
+
+  解像度そのものではなく、**低解像度 × 長い開ループ**の組み合わせが効いていた。
+  128pxのままでもnを縮めれば解決する。
+- **本番相当（T1 exampleタスク4種、128px）**: n=50で0.0%（8エピソード全て
+  300ステップ消化）→ n=10で**70.0%**（4タスク×5エピソード）。n=5も試したが
+  66.7%で頭打ちで、推論回数だけ倍になるためn=10を採用（方針8）。
+- **レイテンシ**: `/act`の最大0.111秒、平均0.014秒（重い推論は10回に1回）。
+  10秒制限に対して90倍の余裕がある。
+- **計測上の罠**: 検証中に評価クライアントを2つ同時に同じポリシーサーバーへ
+  接続してしまい、15%/20%という嘘の数字が出た。サーバー側のポリシーは単一
+  インスタンスで、action chunkのキューと`/reset`が混線する。**評価は必ず
+  1クライアントずつ**行うこと。
+- **教訓**: VLAのcheckpointに埋め込まれた推論時ハイパーパラメータ
+  （`n_action_steps`等）は学習時の環境に最適化されており、採点環境の条件
+  （解像度・摂動）が違えばそのまま使うと壊れる。重みを疑う前に、まず
+  「摂動なしの素の環境で動くか」を切り分けると原因の所在が一発で分かる。
+
 ---
-最終更新: 2026-08-04
+最終更新: 2026-08-06

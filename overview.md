@@ -5,9 +5,26 @@
 関する情報を1ファイルに詰め込んだ統合ノート。新しい会話でまず読む用、あるいは
 自分が全体像を素早く思い出す用。
 
-**位置づけの注意**: これは2026-08-04時点のスナップショット。詳細な根拠・調査の
+**位置づけの注意**: 本体は2026-08-04時点のスナップショット。詳細な根拠・調査の
 経緯は元の2ファイルにあり、そちらが一次情報。このファイルは自動同期していない
 ので、元ファイルが更新されたら手動でこちらにも反映する必要がある。
+
+## 2026-08-06の更新（本体未反映、要点のみ）
+
+以下は2026-08-06に判明した重要事項で、このファイルの本体（08-04時点）には
+まだ織り込んでいない。詳細は各リンク先を参照。
+
+- **初めて採点が完走した**。3回目までは全て起動失敗。原因は`HF_HOME`の
+  `setdefault`が採点環境の既設定に負けていたこと（`my_strategy.md`方針7）。
+- **ただしスコアは0点だった。真因は`n_action_steps`の既定値50**。20Hz換算で
+  2.5秒の開ループが、採点環境の128×128という低解像度と噛み合って破綻していた。
+  **10に下げてローカルのT1 exampleで 0.0% → 70.0%**（`my_strategy.md`方針8、
+  `competition_analysis.md`「0点の真因」節）。**未提出**。
+- 提出物の再現性を確保した: `submission_template/vendor/`をgit追跡下に置き、
+  提出履歴の台帳[submission_log.md](submission_log.md)を新設、
+  切り分け用の[src/eval_vanilla_libero.py](src/eval_vanilla_libero.py)を常設化。
+- 実装バグは無いことを検証済み（重み500キー完全一致、state 8次元一致、画像の
+  向き・スケール整合）。次に効くのは推論時パラメータの調整とLoRA追加学習。
 
 ---
 
@@ -42,7 +59,7 @@
 - **⚠️ `requirements.txt`に`git+https://…`や`--index-url`等の外部ソース指定は
   禁止。採点環境は外部通信を遮断する。** → これは`pip install`だけの制約ではなく
   「採点環境はネットワークに出られない」という一般的な事実の帰結だと考えられる
-  （[第12節](#12-要対応要注意点まだ手を付けていないこと)に直結する重要な
+  （[第13節](#13-要対応要注意点まだ手を付けていないこと)に直結する重要な
   未対応課題あり）。
 - 提出前チェック: `python validate_submission.py submission.zip`
   （zip健全性・サイズ上限・必須ファイル・エンドポイント・起動スモークテストまで）。
@@ -148,6 +165,10 @@ Action生成に実質的に寄与する必要がある」という要件にも�
    チェックポイント同梱の設定をそのまま使う方針（自前実装は事故りやすいため）。
    `SMOLVLA_MODEL_PATH`環境変数でモデル参照先を切り替えられる実装にし、LoRA
    学習後は同じコードでマージ済みモデルに差し替え可能。
+4. **`lerobot`パッケージをpipインストールせず、ソースをvendor同梱する。**
+   無条件必須依存の`pynput`→`evdev`が採点環境でビルド失敗するため（詳細は
+   第10節）。`submission_template/vendor/lerobot/`にソース一式を同梱し、
+   `policy_server.py`が`sys.path`に追加して使う。
 
 ## 8. 実装状況（`submission_template/policy_server.py`）
 
@@ -165,15 +186,19 @@ Action生成に実質的に寄与する必要がある」という要件にも�
   `reset()`で`self.policy.reset()`を呼べばクリアされる。自前実装不要。
 - 起動高速化: `config.load_vlm_weights = False`でVLM初期重みの二重ダウンロード
   を回避（120秒起動制約対策）。
-- `requirements.txt`に`lerobot[smolvla]==0.4.4`を追加済み（**採点環境が
-  Python 3.10.12のため**。`lerobot>=0.5.0`は`requires-python>=3.12`で
-  入らない。詳細は次節「重大インシデント」参照）。
-  `torch`/`huggingface_hub`は明示せず、採点環境のプリインストール版
-  （`--system-site-packages`経由）に任せる方針。
+- `lerobot`本体はpipインストールせず`submission_template/vendor/lerobot/`に
+  ソース同梱（**採点環境がPython 3.10.12のためlerobot>=0.5.0が入らない**上、
+  Python 3.10で入る0.4.4も無条件必須依存`pynput`→`evdev`がビルド失敗する
+  ため。詳細は第9節・第10節参照）。`requirements.txt`にはvendorした
+  lerobotソースが実際に必要とする個別の依存
+  （`torchvision`, `transformers`, `accelerate`, `datasets`等）を明記。
+  `torch`/`numpy`/`huggingface_hub`等は明示せず、採点環境のプリインストール版
+  （`--system-site-packages`経由）に任せる方針（torchのみtorchvisionの
+  要求で自動的にCUDA12系へ巻き戻る）。
 - **オフライン起動対応**: `src/download_model_weights.py`で
   `submission_template/model_weights/hf_cache/`にモデル一式（symlinkなし形式）
   を事前ダウンロード。あれば`HF_HUB_OFFLINE=1`で完全オフライン起動する
-  （詳細は[第12節](#12-要対応要注意点まだ手を付けていないこと)）。
+  （詳細は[第13節](#13-要対応要注意点まだ手を付けていないこと)）。
 - 動画付きローカル評価ツール `src/record_rollout.py`（使い方は`src/README.md`）
   を追加。`pipeline/rollout.py`と同じ成功判定ロジックを踏襲しつつ動画も残す。
   `pipeline/`本体・`submission_template/`本体は無改変。
@@ -214,7 +239,45 @@ ERROR: Could not find a version that satisfies the requirement lerobot==0.6.0
   `blobs/`と一時ログ`xet/`を削除）を追加して解決。この状態で
   `validate_submission.py`の静的・動的チェック両方PASS（errors=0）を確認済み。
 
-## 10. 動作確認結果（2026-08-02、`askr5090`にて）
+## 10. 重大インシデント2: evdevビルド失敗とlerobotのvendor化（2026-08-04）
+
+lerobot 0.4.4に切り替えて再提出したが、依存インストール段階で別のエラーが
+出て再度0点になった。
+
+```
+× Building wheel for evdev (pyproject.toml) did not run successfully.
+src/evdev/input.c:10:10: fatal error: Python.h: No such file or directory
+```
+
+- **原因**: `evdev`（Linux入力デバイス用、C拡張が必要）はPyPIに一度も
+  wheelを公開しておらず常にソースビルドが必要。採点環境にはPythonヘッダーが
+  無くビルドが失敗する。`evdev`は`pynput`（lerobotが無条件必須依存として
+  宣言、smolvla extraとは無関係）が要求しており、lerobotのバージョンを
+  0.3.x〜0.4.4のどれに変えても同じ依存宣言があるため回避不可（実際に各
+  バージョンのPyPIメタデータを確認した）。
+- **pynput/evdevはSmolVLA推論に一切使われていない**ことを、削除した状態で
+  importチェーンが正常に動くことを実機確認して裏取りした（ゲームパッド等の
+  実機テレオペ機能向けの依存）。
+- **requirements.txt側での回避は構造的に不可能**: ローカル`.whl`参照・
+  `file://`参照・`--find-links`はいずれも`validate_submission.py`の静的検査
+  で明示的に拒否される（`req.local_path`/`req.external_url`/
+  `BANNED_REQ_OPTIONS`、「setup.pyがinstall時に実行される」ためのセキュリティ
+  対策）。
+- **対応（`my_strategy.md`方針6参照）**: `lerobot`パッケージをpipインストール
+  するのをやめ、ソース一式を`submission_template/vendor/lerobot/`に同梱し、
+  `policy_server.py`が`sys.path`に追加して使う方式にした。vendorしたソースが
+  実際に必要とする依存（`lerobot.policies.__init__`が全ポリシー種別を無条件
+  importする作りのため、`groot`経由で`robots`/`motors`/`pyserial`まで
+  芋づる式に読み込まれる等）を、クリーンなPython 3.10環境で1つずつ
+  importエラーを解消しながら特定した。幸いこれらは全てPyPIにwheelがあり、
+  evdevのような問題は再発しなかった。
+- **検証**: 採点環境のプリインストール状態を模した環境で、素の
+  `pip install -r requirements.txt`が警告・エラーなしで完了し`evdev`/
+  `pynput`が一切入らないこと、モデルのロード・推論、
+  `validate_submission.py`の静的・動的チェック（zip展開込み）が全てPASS
+  することを確認した。
+
+## 11. 動作確認結果（2026-08-02、`askr5090`にて）
 
 - **GPU環境**: `nvidia-smi`は`Driver/library version mismatch`で動かないが、
   `libcuda.so`直叩きでCUDA計算自体は正常と確認（RTX5090、31.4GB）。壊れているのは
@@ -233,7 +296,7 @@ ERROR: Could not find a version that satisfies the requirement lerobot==0.6.0
 - **動画コーデックの罠**: `cv2.VideoWriter`既定の`mp4v`はブラウザ`<video>`で
   再生不可。`imageio`+`imageio-ffmpeg`（`libx264`, `yuv420p`）で解決。
 
-## 11. 会話内で出た未採用の戦略仮説（Claude発、まだ決定していない）
+## 12. 会話内で出た未採用の戦略仮説（Claude発、まだ決定していない）
 
 - **学習時の分布拡張アプローチ**: Track3（未知タスク）対策として、個々のタスクを
   覚えさせるのではなく「タスクの構成要素（物体・動作・指示表現）の組み合わせ方への
@@ -246,7 +309,7 @@ ERROR: Could not find a version that satisfies the requirement lerobot==0.6.0
   テクスチャ・照明条件への頑健性なので、視覚エンコーダを凍結したままだと
   そこに直接対応できない可能性がある。まだ採用は決めていない。
 
-## 12. ⚠️ 要対応・要注意点（まだ手を付けていないこと）
+## 13. ⚠️ 要対応・要注意点（まだ手を付けていないこと）
 
 - **【対応済み・2026-08-02】オフライン制約への対応**: [README.md](README.md)に
   「採点環境は外部通信を遮断する」と明記されており、`MyPolicy`がデフォルトで
@@ -268,13 +331,15 @@ ERROR: Could not find a version that satisfies the requirement lerobot==0.6.0
 - 予選/本選の参加者数の食い違い（500名 vs 200名）、本選のTrack構成の正式資料
   未確認（6/19説明会情報のみ）。Slack等での最新確認が必要。
 
-## 13. ファイルマップ
+## 14. ファイルマップ
 
 | パス | 役割 |
 |---|---|
 | [competition_analysis.md](competition_analysis.md) | 技術調査・未採用仮説の詳細（このファイルの一次情報） |
 | [my_strategy.md](my_strategy.md) | 確定した意思決定の詳細（このファイルの一次情報） |
 | [submission_template/policy_server.py](submission_template/policy_server.py) | 提出物本体（`MyPolicy`にSmolVLA実装済み） |
+| [submission_template/vendor/lerobot/](submission_template/vendor/lerobot/) | pipインストールしない`lerobot`本体のvendorソース（evdevビルド回避、第10節参照） |
+| [submissions/](submissions/) | 提出用に作ったzip一式（`.gitignore`済み） |
 | [src/record_rollout.py](src/record_rollout.py), [src/README.md](src/README.md) | 動画付きローカル評価ツール |
 | [src/download_model_weights.py](src/download_model_weights.py) | モデル重みをオフライン用に事前ダウンロード（`submission_template/model_weights/`、`.gitignore`済み） |
 | [examples/smolvla_libero_spatial_lora.ipynb](examples/smolvla_libero_spatial_lora.ipynb) | SmolVLA LoRA学習notebook（Colab想定） |

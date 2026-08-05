@@ -84,11 +84,40 @@ class MyPolicy(BasePolicy): # BasePolicyを継承
     # 読み込む（src/download_model_weights.py で作成する）。同梱がなければ従来通り
     # オンラインで取得する（ローカル開発時の後方互換）。
     HF_CACHE_DIR = pathlib.Path(__file__).resolve().parent / "model_weights" / "hf_cache"
+    HF_HUB_CACHE_DIR = HF_CACHE_DIR / "hub"
+
+    # action chunk のうち何ステップを開ループで実行してから再推論するか。
+    # checkpointの既定値は50だが、これは128x128の採点環境では致命的に長い
+    # （50ステップ＝20Hzで2.5秒を無観測で走り切るため、チャンクが現実からずれる）。
+    # ローカル実測（素のlibero_object 10タスク、128px、300ステップ上限）:
+    #   n=50 → 10%、n=10 → 90%。本番相当のT1 exampleタスクでは 0% → 66.7%。
+    # n=5でも66.7%で頭打ちだったため、推論回数が半分で済む10を既定とする。
+    # 0を指定するとcheckpointの値をそのまま使う。
+    N_ACTION_STEPS = int(os.environ.get("SMOLVLA_N_ACTION_STEPS", "10"))
+
+    # lerobotパッケージはpipインストールしない。無条件必須依存のpynputが
+    # Linuxでevdev（PyPIにwheelなし、常にソースビルドが必要）を要求し、
+    # 採点環境にPythonヘッダーが無くビルドに失敗するため
+    # （requirements.txtのコメント、my_strategy.md方針6参照）。
+    # 代わりにソースをこのファイルと同じ階層のvendor/lerobotに同梱し、
+    # sys.pathへ追加して使う。
+    VENDOR_DIR = pathlib.Path(__file__).resolve().parent / "vendor"
 
     def __init__(self):
+        import sys
+
+        if str(self.VENDOR_DIR) not in sys.path:
+            sys.path.insert(0, str(self.VENDOR_DIR))
+
         if self.HF_CACHE_DIR.is_dir():
-            os.environ.setdefault("HF_HOME", str(self.HF_CACHE_DIR))
-            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+            # setdefault ではなく上書きする。採点環境は HF_HOME / HF_HUB_CACHE を
+            # 独自の値で設定済みで、setdefault だと同梱キャッシュが無視され、
+            # かつ HF_HUB_OFFLINE=1 のため LocalEntryNotFoundError で落ちる。
+            # HF_HUB_CACHE は HF_HOME より優先されるので両方明示する。
+            os.environ["HF_HOME"] = str(self.HF_CACHE_DIR)
+            os.environ["HF_HUB_CACHE"] = str(self.HF_HUB_CACHE_DIR)
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
         import torch
         from huggingface_hub import snapshot_download
@@ -99,10 +128,19 @@ class MyPolicy(BasePolicy): # BasePolicyを継承
         from lerobot.policies.factory import make_pre_post_processors
         from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
-        # もしMODEL_PATHがローカルディレクトリならそのまま使う
-        # そうでなければダウンロードしてくる。
+        # もしMODEL_PATHがローカルディレクトリならそのまま使う。
+        # 次に同梱キャッシュ内のスナップショットを直接指す（HFの環境変数解決に
+        # 依存せずオフラインで確実に解決するため）。どちらも無ければダウンロード。
+        bundled_snapshot = (
+            self.HF_HUB_CACHE_DIR
+            / f"models--{self.MODEL_PATH.replace('/', '--')}"
+            / "snapshots"
+            / self.MODEL_REVISION
+        )
         if os.path.isdir(self.MODEL_PATH):
             model_dir = self.MODEL_PATH
+        elif bundled_snapshot.is_dir():
+            model_dir = str(bundled_snapshot)
         else:
             model_dir = snapshot_download(
                 repo_id=self.MODEL_PATH,
@@ -127,6 +165,8 @@ class MyPolicy(BasePolicy): # BasePolicyを継承
         # state_dict をロードするので二度手間になり、起動タイムアウト(120秒)を
         # 圧迫する。examples/ のノートブックも merge 後の推論ではこれを false にしている）。
         config.load_vlm_weights = False
+        if self.N_ACTION_STEPS:
+            config.n_action_steps = self.N_ACTION_STEPS
 
         # ロード・デバイスへの転送・推論モードに
         self.policy = SmolVLAPolicy.from_pretrained(model_dir, config=config, strict=False)
