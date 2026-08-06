@@ -210,3 +210,38 @@ venv/bin/python src/eval_vanilla_libero.py \
 
 という差が出て、原因が重みでも前処理でもなく開ループ長だと特定できた
 （`my_strategy.md`方針8）。
+
+## eval_holdout.py
+
+`compe/t1/holdout_test_tasks.csv` の15ケース（`libero_holdout`スイート）で
+評価する。`my_strategy.md`方針2で「3スイートそれぞれから基本タスクを1つ抜いて
+学習に使わない」と決めた、LoRAの効果を測るための指標。
+
+`pipeline/environment.py`が自動登録するのは`libero_t1`（exampleタスク）だけで、
+holdoutは`compe.t1.register_holdout.register_holdout()`を明示的に呼ばないと
+ベンチマーク辞書に載らない。しかも`EnvironmentManager.__init__`が
+`get_benchmark_dict()`をスナップショットするため、**登録はその生成より前**で
+なければならない。このスクリプトがその順序を保証する。
+
+```bash
+source env.sh
+venv/bin/python src/eval_holdout.py --server-url http://localhost:8000 --episodes 3
+```
+
+### 別のモデルと比較するとき
+
+`SMOLVLA_MODEL_PATH`にローカルディレクトリを渡すとその重みで起動する。
+
+```bash
+SMOLVLA_MODEL_PATH=~/parc_lora_workspace/smolvla_parc_lora_holdout_eval_merged \
+    .local_libs/verify/venv_final_check/bin/python \
+    submission_template/policy_server.py --port 8000
+```
+
+**LoRAマージ済みモデルはlerobot 0.6.0でconfig.jsonが書かれており、提出物側の
+0.4.4では`pretrained_revision`フィールドで`DecodingError`になる**。当該キーを
+除いたconfig.jsonのコピーを作って読ませる（大きいファイルはsymlinkでよい）。
+
+比較するときは**必ず両方を同じハーネス・同じ条件で測り直す**こと。8/4の
+ノートブック側の数字と`record_rollout.py`の数字は判定条件が揃っておらず、
+そのまま並べられない。
