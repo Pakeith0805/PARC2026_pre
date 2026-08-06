@@ -778,14 +778,82 @@ has been disabled.
 **0.12839**だった。この差はLoRAの±2ppより遥かに大きく、**ローカル指標が
 本番の代理になっていない**ことを示している。
 
-- 本番ログには`[evaluate] タスク用途: 3_Omni`とある。**複数摂動の合成**条件。
+- 本番ログには`[evaluate] タスク用途: 3_Omni`とある。**この文字列は配布された
+  `pipeline/`・`compe/`のどこにも存在せず**（非公開の採点スクリプト側の用語）、
+  意味は裏取りできていない。当初「複数摂動の合成」と解釈したが、LIBERO-plusの
+  10,030タスクは`task_classification.json`上いずれも**単一カテゴリ**に分類されて
+  おり、合成カテゴリは存在しない。**「7次元すべてから出題される」の意**と読む方が
+  データと整合する（後述の実測もこの解釈を支持する）。
 - 一方ローカルのholdout15ケース（`compe/t1/holdout_test_tasks.csv`）は
   `Background Textures`か`Light Conditions`の**単一カテゴリ**摂動（L1〜L5）。
   T1のexampleタスク4件も同様。
 - つまり現状のローカル評価は本番より大幅に易しい。この指標で改善を判断し続けると
   「ローカルでは天井に見えるのに本番は10%台」という状態から抜け出せない。
-- **次にやるべきは、合成摂動（omni相当）のローカル評価セットを作ること。**
+- **次にやるべきは、7次元をできるだけ広くカバーするローカル評価セットを作ること。**
   LoRAの追い込みはその後。
+
+## omni評価セットの構築と実測（2026-08-06）
+
+上記を受けて`libero_omni`（31件）を作った。生成は`src/build_omni_eval_set.py`、
+登録は`compe/t1/register_omni.py`、実行は`src/eval_omni.py`。学習から除外した
+3つの基本タスク（方針2）の摂動変種を、難易度L1/L3/L5に散らして選んでいる。
+
+### カバーできた次元・できなかった次元（実測）
+
+3基本タスクの変種について`.bddl`実体の有無を数えた結果:
+
+| 次元 | 変種数 | `.bddl` | 扱い |
+|---|---|---|---|
+| Background Textures | 79 | あり | 採用（従来から） |
+| Light Conditions | 97 | あり | 採用（従来から） |
+| Objects Layout | 117 | あり | **新規採用**。従来セットは未使用だった。L4/L5が66件 |
+| Language Instructions | 82 | 無し | **新規採用**。難易度ラベル付きの名前には実体が無いが、
+  ラベル無しの`<base>_language_N.bddl`が各50件実在する（難易度不明として扱う） |
+| Camera Viewpoints | 127 | 無し | 不可。ハーネスの`camera_view_shift`も`PerturbationConfig`に
+  フィールドがあるだけで`environment.py`から一度も参照されていない |
+| Robot Initial States | 116 | 無し | 不可。`get_perturbed_init_states()`は
+  `robot_init_pos_noise>0`でログを出すだけで`sampled_states`を書き換えていない |
+| Sensor Noise | 110 | 無し | 静的ファイルは無いが`apply_observation_noise()`は実装済みで、
+  実行時ノイズで近似できる（未着手） |
+
+つまり **2次元 → 4次元**。残る3次元は本番で問われるはずなので、この指標も依然として
+本番より甘い。
+
+### 実装上わかったこと
+
+- Objects Layout（`_add_N` / `*_level*_sample*`）と Language（`_language_N`）の
+  `.bddl`は、そのタスクが属するスイートのフォルダではなく`libero_mix/`に在る。
+- 配布`register.py`の`_init_states_for`は`<root>/<problem_folder>/`決め打ちで、
+  接尾辞も`_light_*`と`_table_\d+`しか剥がさないため、この2次元は解決できない。
+  `register_omni.py`に自前の解決を実装した（完全一致 → シーン非変更の接尾辞を
+  剥がしてベース共有、の順で探す）。
+- **Language変種は専用の`.pruned_init`を持たない**。シーンは変わらず指示文だけが
+  変わるので、ベースタスクのinitを共有してよい。
+- **Objects Layout変種はベースのinitを流用してはいけない**。物体が増えるため
+  state次元自体が変わる（例: base 110次元 → `_add_14` 149次元）。専用のinitが
+  `init_files/libero_newobj/<folder>/`に在る。
+- Objects Layout用のinitは**1エピソード分だけ**の1次元配列で保存されている
+  （ベースは`(50, 110)`）。2次元に整形して渡すが、結果として全エピソードが同じ
+  初期状態になり、エピソード間の違いはポリシーのサンプリングノイズだけになる。
+
+### ベース重みでの実測（n=10、3エピソード/タスク、128px、300ステップ上限）
+
+| カテゴリ | タスク数 | 成功率 |
+|---|---|---|
+| Background Textures | 7 | 85.7% |
+| Light Conditions | 7 | 76.2% |
+| **Objects Layout** | 8 | **29.2%** |
+| **Language Instructions** | 9 | **11.1%** |
+| **Overall（タスク平均）** | **31** | **47.3%** |
+
+- **新たに入れた2次元が壊滅的**。特にLanguage Instructionsの11.1%は、
+  LIBERO-plusの論文が主張する「VLAは言語指示をほぼ無視しており、実質
+  Vision-Actionモデルとして振る舞う」という指摘とそのまま一致する。
+- Overallは従来のholdout 77.8%より本番0.12839に近い47.3%。まだ本番より甘いが、
+  これは未カバーの3次元（特に論文が「95%→30%未満」と報告するCamera Viewpoints）
+  が効いていないためと考えると筋が通る。
+- **改善の最大のレバーはLanguage InstructionsとObjects Layout**。背景・照明は
+  既に80%前後で伸びしろが小さい。
 
 ---
 最終更新: 2026-08-06

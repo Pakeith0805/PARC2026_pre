@@ -245,3 +245,46 @@ SMOLVLA_MODEL_PATH=~/parc_lora_workspace/smolvla_parc_lora_holdout_eval_merged \
 比較するときは**必ず両方を同じハーネス・同じ条件で測り直す**こと。8/4の
 ノートブック側の数字と`record_rollout.py`の数字は判定条件が揃っておらず、
 そのまま並べられない。
+
+## build_omni_eval_set.py / eval_omni.py
+
+既存のローカル評価セット（T1 example 4件、holdout 15件）はLIBERO-plusの
+**7摂動次元のうち2次元（Background Textures / Light Conditions）しか触っておらず**、
+ベース重みがholdoutで77.8%を出す一方で本番スコアは0.12839、という乖離を生んでいた。
+`libero_omni`（31件）はカバー範囲を**4次元**に広げるための評価セット。
+
+```bash
+# 1. タスク一覧を生成（seed固定、何度実行しても同じCSVになる）
+.local_libs/verify/venv_final_check/bin/python src/build_omni_eval_set.py
+#    -> compe/t1/omni_eval_tasks.csv
+
+# 2. 評価（別ターミナルでポリシーサーバーを起動しておくこと）
+source env.sh
+venv/bin/python src/eval_omni.py --server-url http://localhost:8000 --episodes 3 \
+    --record-episodes 0 --max-steps 300 --camera-size 128 > omni.log 2>&1
+
+# 3. カテゴリ別に集計
+venv/bin/python src/eval_omni.py --summarize omni.log
+```
+
+### ベース重みでの実測（2026-08-06、n_action_steps=10）
+
+| カテゴリ | タスク数 | 成功率 |
+|---|---|---|
+| Background Textures | 7 | 85.7% |
+| Light Conditions | 7 | 76.2% |
+| Objects Layout | 8 | **29.2%** |
+| Language Instructions | 9 | **11.1%** |
+| Overall | 31 | **47.3%** |
+
+カバーできない3次元（Camera Viewpoints / Robot Initial States / Sensor Noise）に
+ついては`src/build_omni_eval_set.py`のdocstringと`competition_analysis.md`
+「omni評価セットの構築と実測」節を参照。**この指標も本番より甘い**点に注意。
+
+### 注意点
+
+- **Objects Layoutは全エピソードが同じ初期状態になる**。専用のinitファイルが
+  1エピソード分しか無いため（ベースは50本）、エピソード間の違いはポリシー側の
+  サンプリングノイズだけ。
+- Language Instructionsには公式の難易度ラベルが無い（ラベル付きの名前には
+  `.bddl`実体が存在しないため、ラベル無しの変種を使っている）。

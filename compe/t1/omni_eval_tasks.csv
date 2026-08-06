@@ -1,0 +1,32 @@
+task_num,task_id,instruction,suite,category,difficulty_level
+1,pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_6,Pick the bbq sauce and place it in the basket,libero_object,Background Textures,L1
+2,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_22,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,libero_mix,Background Textures,L1
+3,put_the_bowl_on_the_stove_table_7,Put the bowl on the stove,libero_mix,Background Textures,L1
+4,pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_23,Pick the bbq sauce and place it in the basket,libero_object,Background Textures,L3
+5,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_table_2,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,libero_mix,Background Textures,L3
+6,put_the_bowl_on_the_stove_table_5,Put the bowl on the stove,libero_mix,Background Textures,L3
+7,pick_up_the_bbq_sauce_and_place_it_in_the_basket_table_9,Pick the bbq sauce and place it in the basket,libero_object,Background Textures,L5
+8,pick_up_the_bbq_sauce_and_place_it_in_the_basket_language_10,I love bbq sauce Please pick it up and put it in the shopping basket for me,libero_object,Language Instructions,unlabeled
+9,pick_up_the_bbq_sauce_and_place_it_in_the_basket_language_41,pick up the condiment used for grilling meats and place it in the container for holding purchased items,libero_object,Language Instructions,unlabeled
+10,pick_up_the_bbq_sauce_and_place_it_in_the_basket_language_44,The bbq sauce is essential for our meal so pick it up and place it in the basket now,libero_object,Language Instructions,unlabeled
+11,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_language_15,Ensure the black bowl from the top drawer of the wooden cabinet is on the plate,libero_mix,Language Instructions,unlabeled
+12,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_language_49,Retrieve the darkhued vessel stored within the uppermost compartment of the timber storage unit and position it on the dish,libero_mix,Language Instructions,unlabeled
+13,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_language_7,Before the guests arrive pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate on the counter,libero_mix,Language Instructions,unlabeled
+14,put_the_bowl_on_the_stove_language_19,Place the dish atop the cooker,libero_mix,Language Instructions,unlabeled
+15,put_the_bowl_on_the_stove_language_5,The chef instructed us to put the bowl on the stove before continuing,libero_mix,Language Instructions,unlabeled
+16,put_the_bowl_on_the_stove_language_8,put the deep rounded dish used for holding food on the cooking appliance used for heating,libero_mix,Language Instructions,unlabeled
+17,pick_up_the_bbq_sauce_and_place_it_in_the_basket_light_20,Pick the bbq sauce and place it in the basket,libero_object,Light Conditions,L1
+18,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_light_49,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,libero_mix,Light Conditions,L1
+19,pick_up_the_bbq_sauce_and_place_it_in_the_basket_light_1,Pick the bbq sauce and place it in the basket,libero_object,Light Conditions,L3
+20,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_light_25,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,libero_mix,Light Conditions,L3
+21,pick_up_the_bbq_sauce_and_place_it_in_the_basket_light_10,Pick the bbq sauce and place it in the basket,libero_object,Light Conditions,L5
+22,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_light_18,Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,libero_mix,Light Conditions,L5
+23,put_the_bowl_on_the_stove_light_15,Put the bowl on the stove,libero_mix,Light Conditions,L5
+24,pick_up_the_bbq_sauce_and_place_it_in_the_basket_add_14,pick the bbq sauce and place it in the basket,libero_object,Objects Layout,L1
+25,put_the_bowl_on_the_stove_add_29,put the bowl on the stove,libero_mix,Objects Layout,L1
+26,pick_up_the_bbq_sauce_and_place_it_in_the_basket_add_22,pick the bbq sauce and place it in the basket,libero_object,Objects Layout,L3
+27,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_add_9,pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,libero_mix,Objects Layout,L3
+28,put_the_bowl_on_the_stove_moved_level2_sample2,put the bowl on the stove,libero_mix,Objects Layout,L3
+29,pick_up_the_bbq_sauce_and_place_it_in_the_basket_level5_sample1,pick the bbq sauce and place it in the basket,libero_object,Objects Layout,L5
+30,pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_level5_sample3,pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate,libero_mix,Objects Layout,L5
+31,put_the_bowl_on_the_stove_moved_level3_sample4,put the bowl on the stove,libero_mix,Objects Layout,L5
